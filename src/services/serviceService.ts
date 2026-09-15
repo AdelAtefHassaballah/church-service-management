@@ -1,7 +1,47 @@
 import { ChurchService, ServiceType, Member, UserProfile, MemberServantAssignment } from '../types';
 import { storage } from '../lib/storage';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 export const serviceService = {
+  fetchAll: async (): Promise<ChurchService[]> => {
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('services')
+          .select('*')
+          .order('name', { ascending: true });
+
+        if (!error && data) {
+          const mapped: ChurchService[] = data.map((row: any) => ({
+            id: row.id,
+            church_id: row.church_id || 'church-1',
+            name: row.name,
+            name_ar: row.name_ar,
+            description: row.description || undefined,
+            description_ar: row.description_ar || undefined,
+            service_type: row.service_type || 'preparatory',
+            location: row.location || undefined,
+            day_of_week: row.day_of_week || undefined,
+            start_time: row.start_time || undefined,
+            end_time: row.end_time || undefined,
+            leader_ids: [],
+            servant_ids: [],
+            member_ids: [],
+            status: row.status || 'active',
+            color: row.color || '#026bc7',
+            notes: row.notes || undefined,
+            created_at: row.created_at || new Date().toISOString(),
+          }));
+          storage.saveServices(mapped);
+          return mapped;
+        }
+      } catch (err) {
+        console.warn('Supabase services fetch error:', err);
+      }
+    }
+    return storage.getServices();
+  },
+
   getAll: (): ChurchService[] => {
     return storage.getServices();
   },
@@ -27,7 +67,7 @@ export const serviceService = {
     color?: string;
     notes?: string;
   }): ChurchService => {
-    const newId = 'srv-' + Date.now();
+    const newId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'srv-' + Date.now();
     const newService: ChurchService = {
       ...data,
       id: newId,
@@ -48,6 +88,30 @@ export const serviceService = {
       newService.id
     );
 
+    if (isSupabaseConfigured() && supabase) {
+      supabase
+        .from('services')
+        .insert({
+          id: newService.id,
+          name: newService.name,
+          name_ar: newService.name_ar,
+          description: newService.description || null,
+          description_ar: newService.description_ar || null,
+          service_type: newService.service_type,
+          location: newService.location || null,
+          day_of_week: newService.day_of_week || null,
+          start_time: newService.start_time || null,
+          end_time: newService.end_time || null,
+          status: newService.status,
+          color: newService.color,
+          notes: newService.notes || null,
+          created_at: newService.created_at,
+        })
+        .then(({ error }) => {
+          if (error) console.warn('Remote Supabase service insert error:', error.message);
+        });
+    }
+
     return newService;
   },
 
@@ -62,6 +126,30 @@ export const serviceService = {
 
     storage.saveService(updated);
     storage.logAction('SERVICE_UPDATED', 'service', `Updated details for service "${updated.name}"`, id);
+
+    if (isSupabaseConfigured() && supabase) {
+      supabase
+        .from('services')
+        .update({
+          name: updated.name,
+          name_ar: updated.name_ar,
+          description: updated.description || null,
+          description_ar: updated.description_ar || null,
+          service_type: updated.service_type,
+          location: updated.location || null,
+          day_of_week: updated.day_of_week || null,
+          start_time: updated.start_time || null,
+          end_time: updated.end_time || null,
+          status: updated.status,
+          color: updated.color,
+          notes: updated.notes || null,
+        })
+        .eq('id', id)
+        .then(({ error }) => {
+          if (error) console.warn('Remote Supabase service update error:', error.message);
+        });
+    }
+
     return updated;
   },
 

@@ -145,6 +145,9 @@ export const storage = {
     }
     save(STORAGE_KEYS.SERVICES, services);
   },
+  saveServices: (services: ChurchService[]) => {
+    save(STORAGE_KEYS.SERVICES, services);
+  },
   deleteService: (id: string) => {
     const services = storage.getServices().filter(s => s.id !== id);
     save(STORAGE_KEYS.SERVICES, services);
@@ -180,6 +183,9 @@ export const storage = {
     } else {
       members.push(member);
     }
+    save(STORAGE_KEYS.MEMBERS, members);
+  },
+  saveMembers: (members: Member[]) => {
     save(STORAGE_KEYS.MEMBERS, members);
   },
   deleteMember: (id: string) => {
@@ -231,6 +237,9 @@ export const storage = {
     }
     save(STORAGE_KEYS.SERVANT_ATTENDANCE, list);
   },
+  saveServantAttendanceRecords: (records: ServantAttendanceRecord[]) => {
+    save(STORAGE_KEYS.SERVANT_ATTENDANCE, records);
+  },
 
   // QR Codes
   getQRCodes: (): QRCodeRecord[] => {
@@ -261,6 +270,9 @@ export const storage = {
     }
     save(STORAGE_KEYS.LESSONS, lessons);
   },
+  saveLessons: (lessons: WeeklyLesson[]) => {
+    save(STORAGE_KEYS.LESSONS, lessons);
+  },
 
   // Tasks
   getTasks: (): Task[] => {
@@ -274,6 +286,9 @@ export const storage = {
     } else {
       tasks.push(task);
     }
+    save(STORAGE_KEYS.TASKS, tasks);
+  },
+  saveTasks: (tasks: Task[]) => {
     save(STORAGE_KEYS.TASKS, tasks);
   },
   deleteTask: (id: string) => {
@@ -293,6 +308,9 @@ export const storage = {
     } else {
       events.push(event);
     }
+    save(STORAGE_KEYS.EVENTS, events);
+  },
+  saveEvents: (events: CalendarEvent[]) => {
     save(STORAGE_KEYS.EVENTS, events);
   },
   deleteEvent: (id: string) => {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from './context/AuthContext';
 import { useLanguage } from './context/LanguageContext';
 import { Header } from './components/common/Header';
@@ -28,6 +28,7 @@ import { AddEditMemberModal } from './components/members/AddEditMemberModal';
 import { SubmitLessonModal } from './components/lessons/SubmitLessonModal';
 import { CreateTaskModal } from './components/tasks/CreateTaskModal';
 import { memberService } from './services/memberService';
+import { syncService } from './services/syncService';
 
 export const App: React.FC = () => {
   const { user, role } = useAuth();
@@ -40,6 +41,13 @@ export const App: React.FC = () => {
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
   const [isSubmitLessonOpen, setIsSubmitLessonOpen] = useState(false);
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
+
+  // Synchronize remote database on load
+  useEffect(() => {
+    if (user) {
+      syncService.syncAll();
+    }
+  }, [user]);
 
   // If unauthenticated, show Login Page
   if (!user) {
