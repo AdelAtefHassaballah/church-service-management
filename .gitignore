@@ -27,3 +27,7 @@ dist-ssr
 .env
 .env.production
 .env.development
+
+# Generated repo dumps
+repomix-output.xml
+repomix-*.xml

@@ -55,27 +55,7 @@ function save<T>(key: string, data: T): void {
   }
 }
 
-const DEFAULT_SUPER_ADMIN: UserProfile = {
-  id: 'usr-super-admin-1',
-  email: 'adelgerges@church.org',
-  name: 'Adel Gerges',
-  name_ar: 'عادل عاطف',
-  role: 'super_admin',
-  status: 'active',
-  qr_code: 'servant:usr-super-admin-1',
-  service_ids: ['svc-prep', 'svc-sec', 'svc-youth', 'svc-child'],
-  permissions: [
-    'members.view', 'members.create', 'members.edit', 'members.delete',
-    'attendance.view', 'attendance.create', 'attendance.edit', 'attendance.delete',
-    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
-    'events.view', 'events.create', 'events.edit', 'events.delete',
-    'lessons.view', 'lessons.create', 'lessons.edit', 'lessons.delete',
-    'services.view', 'services.create', 'services.edit', 'services.delete',
-    'users.view', 'users.create', 'users.edit', 'users.delete', 'users.disable',
-    'analytics.view', 'reports.view', 'settings.manage', 'qr.manage'
-  ],
-  created_at: new Date().toISOString()
-};
+const LEGACY_LOCAL_ADMIN_ID = 'usr-super-admin-1';
 
 export const storage = {
   // Clear all cached local data
@@ -88,7 +68,12 @@ export const storage = {
     const data = localStorage.getItem(STORAGE_KEYS.ACTIVE_USER);
     if (!data) return null;
     try {
-      return JSON.parse(data);
+      const user = JSON.parse(data);
+      if (user?.id === LEGACY_LOCAL_ADMIN_ID) {
+        localStorage.removeItem(STORAGE_KEYS.ACTIVE_USER);
+        return null;
+      }
+      return user;
     } catch {
       return null;
     }
@@ -103,12 +88,12 @@ export const storage = {
 
   // Profiles & Users
   getProfiles: (): UserProfile[] => {
-    const list = load<UserProfile[]>(STORAGE_KEYS.PROFILES, [DEFAULT_SUPER_ADMIN]);
-    if (list.length === 0) {
-      save(STORAGE_KEYS.PROFILES, [DEFAULT_SUPER_ADMIN]);
-      return [DEFAULT_SUPER_ADMIN];
+    const list = load<UserProfile[]>(STORAGE_KEYS.PROFILES, []);
+    const filtered = list.filter(p => p.id !== LEGACY_LOCAL_ADMIN_ID);
+    if (filtered.length !== list.length) {
+      save(STORAGE_KEYS.PROFILES, filtered);
     }
-    return list;
+    return filtered;
   },
   getProfileById: (id: string): UserProfile | undefined => {
     return storage.getProfiles().find(p => p.id === id);
