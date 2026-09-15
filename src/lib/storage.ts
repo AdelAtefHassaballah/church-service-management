@@ -55,6 +55,28 @@ function save<T>(key: string, data: T): void {
   }
 }
 
+const DEFAULT_SUPER_ADMIN: UserProfile = {
+  id: 'usr-super-admin-1',
+  email: 'adelgerges@church.org',
+  name: 'Adel Gerges',
+  name_ar: 'عادل عاطف',
+  role: 'super_admin',
+  status: 'active',
+  qr_code: 'servant:usr-super-admin-1',
+  service_ids: ['svc-prep', 'svc-sec', 'svc-youth', 'svc-child'],
+  permissions: [
+    'members.view', 'members.create', 'members.edit', 'members.delete',
+    'attendance.view', 'attendance.create', 'attendance.edit', 'attendance.delete',
+    'tasks.view', 'tasks.create', 'tasks.edit', 'tasks.delete',
+    'events.view', 'events.create', 'events.edit', 'events.delete',
+    'lessons.view', 'lessons.create', 'lessons.edit', 'lessons.delete',
+    'services.view', 'services.create', 'services.edit', 'services.delete',
+    'users.view', 'users.create', 'users.edit', 'users.delete', 'users.disable',
+    'analytics.view', 'reports.view', 'settings.manage', 'qr.manage'
+  ],
+  created_at: new Date().toISOString()
+};
+
 export const storage = {
   // Clear all cached local data
   clearAll: () => {
@@ -81,7 +103,12 @@ export const storage = {
 
   // Profiles & Users
   getProfiles: (): UserProfile[] => {
-    return load<UserProfile[]>(STORAGE_KEYS.PROFILES, []);
+    const list = load<UserProfile[]>(STORAGE_KEYS.PROFILES, [DEFAULT_SUPER_ADMIN]);
+    if (list.length === 0) {
+      save(STORAGE_KEYS.PROFILES, [DEFAULT_SUPER_ADMIN]);
+      return [DEFAULT_SUPER_ADMIN];
+    }
+    return list;
   },
   getProfileById: (id: string): UserProfile | undefined => {
     return storage.getProfiles().find(p => p.id === id);
