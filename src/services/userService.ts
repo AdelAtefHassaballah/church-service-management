@@ -76,6 +76,43 @@ const createServant = async (data: {
   };
 
   if (isSupabaseConfigured() && supabase) {
+    // 1. Try atomic admin_create_user RPC (provisions auth.users + public.profiles together)
+    const { data: rpcData, error: rpcError } = await supabase.rpc('admin_create_user', {
+      p_email: newProfile.email,
+      p_name: newProfile.name,
+      p_name_ar: newProfile.name_ar,
+      p_role: newProfile.role,
+      p_phone: newProfile.phone,
+      p_whatsapp: newProfile.whatsapp,
+      p_address: newProfile.address || null,
+      p_bio: newProfile.bio || null,
+      p_gender: newProfile.gender || 'male',
+      p_date_of_birth: newProfile.date_of_birth || null,
+      p_avatar_url: newProfile.avatar_url || null,
+      p_service_ids: newProfile.service_ids || [],
+      p_permissions: newProfile.permissions || [],
+      p_status: newProfile.status || 'active',
+    });
+
+    if (!rpcError && rpcData) {
+      const saved: UserProfile = {
+        ...newProfile,
+        ...rpcData,
+        service_ids: rpcData.service_ids || newProfile.service_ids,
+        permissions: rpcData.permissions || newProfile.permissions,
+      };
+      storage.saveProfile(saved);
+      storage.logAction(
+        'SERVANT_CREATED',
+        'user',
+        `Created servant profile for ${saved.name} (${saved.name_ar}) in Supabase`,
+        saved.id
+      );
+      return saved;
+    }
+
+    // 2. Direct insert fallback
+    console.warn('RPC admin_create_user note:', rpcError?.message);
     const payload = {
       id: newProfile.id,
       church_id: churchId,
@@ -96,15 +133,15 @@ const createServant = async (data: {
       qr_code: newProfile.qr_code,
     };
 
-    const { data: dbProfile, error } = await supabase
+    const { data: dbProfile, error: insertError } = await supabase
       .from('profiles')
       .insert(payload)
       .select()
       .single();
 
-    if (error) {
-      console.error('Supabase profile insert error:', error);
-      throw new Error(error.message || 'Failed to save servant to database.');
+    if (insertError) {
+      console.error('Supabase profile insert error:', insertError);
+      throw new Error(rpcError?.message || insertError.message || 'Failed to save servant to database.');
     }
 
     if (dbProfile) {

@@ -702,3 +702,152 @@ BEGIN
     RETURN jsonb_build_object('success', true);
 END;
 $$;
+
+-- 3. Super Admin & Leaders: Administrative user/servant creation in auth.users + public.profiles
+CREATE OR REPLACE FUNCTION public.admin_create_user(
+    p_email TEXT,
+    p_name TEXT,
+    p_name_ar TEXT DEFAULT NULL,
+    p_role user_role DEFAULT 'servant'::user_role,
+    p_phone TEXT DEFAULT NULL,
+    p_whatsapp TEXT DEFAULT NULL,
+    p_address TEXT DEFAULT NULL,
+    p_bio TEXT DEFAULT NULL,
+    p_gender TEXT DEFAULT 'male',
+    p_date_of_birth DATE DEFAULT NULL,
+    p_avatar_url TEXT DEFAULT NULL,
+    p_service_ids TEXT[] DEFAULT '{}'::text[],
+    p_permissions TEXT[] DEFAULT '{}'::text[],
+    p_status TEXT DEFAULT 'active'
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+    new_user_id UUID := uuid_generate_v4();
+    default_pass TEXT := 'Servant' || floor(random() * 900000 + 100000)::text || '!';
+    encrypted_pass TEXT;
+    created_profile RECORD;
+BEGIN
+    IF NOT (public.is_super_admin() OR public.has_permission('users.create')) THEN
+        RAISE EXCEPTION 'Access denied. You do not have permission to create users.';
+    END IF;
+
+    -- Generate bcrypt password
+    encrypted_pass := crypt(default_pass, gen_salt('bf'));
+
+    -- 1. Create auth.users row
+    INSERT INTO auth.users (
+        id,
+        instance_id,
+        email,
+        encrypted_password,
+        email_confirmed_at,
+        raw_app_meta_data,
+        raw_user_meta_data,
+        created_at,
+        updated_at,
+        role,
+        aud
+    )
+    VALUES (
+        new_user_id,
+        '00000000-0000-0000-0000-000000000000',
+        LOWER(TRIM(p_email)),
+        encrypted_pass,
+        NOW(),
+        '{"provider":"email","providers":["email"]}'::jsonb,
+        json_build_object('name', p_name, 'name_ar', p_name_ar, 'role', p_role)::jsonb,
+        NOW(),
+        NOW(),
+        'authenticated',
+        'authenticated'
+    );
+
+    -- 2. Upsert public.profiles row
+    INSERT INTO public.profiles (
+        id,
+        email,
+        name,
+        name_ar,
+        role,
+        avatar_url,
+        phone,
+        whatsapp,
+        address,
+        bio,
+        gender,
+        date_of_birth,
+        status,
+        service_ids,
+        permissions,
+        qr_code,
+        created_at,
+        updated_at
+    )
+    VALUES (
+        new_user_id,
+        LOWER(TRIM(p_email)),
+        p_name,
+        COALESCE(p_name_ar, p_name),
+        p_role,
+        p_avatar_url,
+        p_phone,
+        p_whatsapp,
+        p_address,
+        p_bio,
+        p_gender,
+        p_date_of_birth,
+        p_status,
+        p_service_ids,
+        p_permissions,
+        'SRV-' || new_user_id,
+        NOW(),
+        NOW()
+    )
+    ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name,
+        name_ar = EXCLUDED.name_ar,
+        role = EXCLUDED.role,
+        service_ids = EXCLUDED.service_ids,
+        permissions = EXCLUDED.permissions,
+        status = EXCLUDED.status,
+        updated_at = NOW()
+    RETURNING * INTO created_profile;
+
+    -- 3. Create QR code record
+    INSERT INTO public.qr_codes (
+        entity_type,
+        entity_id,
+        token,
+        status,
+        service_ids,
+        created_at
+    )
+    VALUES (
+        'servant',
+        new_user_id,
+        'SRV-' || new_user_id,
+        'active',
+        p_service_ids,
+        NOW()
+    )
+    ON CONFLICT (token) DO NOTHING;
+
+    -- 4. Log action
+    INSERT INTO public.audit_logs (user_id, user_name, action, entity_type, entity_id, details)
+    VALUES (
+        auth.uid(),
+        COALESCE((SELECT name FROM public.profiles WHERE id = auth.uid()), 'Administrator'),
+        'SERVANT_CREATED',
+        'user',
+        new_user_id,
+        'Created new user profile and credentials for ' || p_name || ' (' || p_email || ')'
+    );
+
+    RETURN to_jsonb(created_profile);
+END;
+$$;
+
