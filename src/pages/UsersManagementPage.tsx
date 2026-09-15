@@ -37,9 +37,11 @@ export const UsersManagementPage: React.FC = () => {
   const [permissionUser, setPermissionUser] = useState<UserProfile | null>(null);
   const [qrModalUser, setQrModalUser] = useState<UserProfile | null>(null);
 
-  const loadUsers = () => {
-    const list = userService.getAll();
-    setUsers(list);
+  const loadUsers = async () => {
+    // Show cached immediately, then sync remote database
+    setUsers(userService.getAll());
+    const remoteList = await userService.fetchAll();
+    setUsers(remoteList);
   };
 
   useEffect(() => {

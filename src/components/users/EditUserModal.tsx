@@ -99,27 +99,41 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
     }
   };
 
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const updated: UserProfile = {
-      ...user,
-      name,
-      name_ar: nameAr,
-      email,
-      phone,
-      whatsapp,
-      address,
-      bio,
-      role,
-      status,
-      service_ids: selectedServices,
-      updated_at: new Date().toISOString(),
-    };
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      const updated: UserProfile = {
+        ...user,
+        name,
+        name_ar: nameAr,
+        email,
+        phone,
+        whatsapp,
+        address,
+        bio,
+        role,
+        status,
+        service_ids: selectedServices,
+        updated_at: new Date().toISOString(),
+      };
 
-    await userService.updateUser(user.id, updated);
-    onSave(updated);
-    confetti({ particleCount: 30, spread: 50 });
-    onClose();
+      const saved = await userService.updateUser(user.id, updated);
+      if (saved) {
+        onSave(saved);
+      }
+      confetti({ particleCount: 30, spread: 50 });
+      onClose();
+    } catch (err: any) {
+      console.error('Update user error:', err);
+      setError(err?.message || 'Failed to update user');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const isSuperAdmin = currentRole === 'super_admin';
@@ -159,6 +173,13 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
           }`}>
             {resetMessage.isError ? <AlertCircle className="w-4 h-4 shrink-0" /> : <CheckCircle2 className="w-4 h-4 shrink-0" />}
             <span>{resetMessage.text}</span>
+          </div>
+        )}
+
+        {error && (
+          <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-semibold text-center flex items-center gap-2 justify-center">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
           </div>
         )}
 

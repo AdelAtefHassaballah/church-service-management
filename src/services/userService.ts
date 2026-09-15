@@ -45,25 +45,28 @@ const createServant = async (data: {
   avatar_url?: string;
   permissions?: Permission[];
   status?: UserStatus;
+  church_id?: string;
 }): Promise<UserProfile> => {
-  const newId = 'usr-servant-' + Date.now();
+  const isUUID = (str?: string) => Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
+  const newId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : '00000000-0000-0000-0000-' + Date.now().toString().slice(-12).padStart(12, '0');
   const targetRole = data.role || 'servant';
-  const initialPerms = data.permissions || DEFAULT_ROLE_PERMISSIONS[targetRole] || [];
+  const initialPerms = data.permissions || DEFAULT_ROLE_PERMISSIONS[targetRole] || DEFAULT_ROLE_PERMISSIONS.servant;
+  const churchId = isUUID(data.church_id) ? data.church_id! : null;
 
   const newProfile: UserProfile = {
     id: newId,
-    email: data.email,
-    name: data.name,
-    name_ar: data.name_ar || data.name,
+    email: data.email.trim().toLowerCase(),
+    name: data.name.trim(),
+    name_ar: (data.name_ar || data.name).trim(),
     role: targetRole,
-    avatar_url: data.avatar_url || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80`,
+    avatar_url: data.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
     phone: data.phone || '+201000000000',
     whatsapp: data.whatsapp || data.phone || '+201000000000',
     address: data.address || '',
     bio: data.bio || '',
-    date_of_birth: data.date_of_birth,
+    date_of_birth: data.date_of_birth || undefined,
     gender: data.gender || 'male',
-    church_id: 'church-1',
+    church_id: churchId || undefined,
     service_ids: data.service_ids || [],
     group_ids: data.group_ids || [],
     permissions: initialPerms,
@@ -73,66 +76,84 @@ const createServant = async (data: {
   };
 
   if (isSupabaseConfigured() && supabase) {
-    try {
-      const { data: dbProfile, error } = await supabase
-        .from('profiles')
-        .insert({
-          id: newProfile.id,
-          church_id: newProfile.church_id,
-          email: newProfile.email,
-          name: newProfile.name,
-          name_ar: newProfile.name_ar,
-          role: newProfile.role,
-          phone: newProfile.phone,
-          whatsapp: newProfile.whatsapp,
-          address: newProfile.address,
-          bio: newProfile.bio,
-          gender: newProfile.gender,
-          date_of_birth: newProfile.date_of_birth,
-          status: newProfile.status,
-          service_ids: newProfile.service_ids,
-          group_ids: newProfile.group_ids,
-          permissions: newProfile.permissions,
-          qr_code: newProfile.qr_code,
-        })
-        .select()
-        .single();
+    const payload = {
+      id: newProfile.id,
+      church_id: churchId,
+      email: newProfile.email,
+      name: newProfile.name,
+      name_ar: newProfile.name_ar,
+      role: newProfile.role,
+      avatar_url: newProfile.avatar_url || null,
+      phone: newProfile.phone,
+      whatsapp: newProfile.whatsapp,
+      address: newProfile.address || null,
+      bio: newProfile.bio || null,
+      gender: newProfile.gender || null,
+      date_of_birth: newProfile.date_of_birth || null,
+      status: newProfile.status,
+      service_ids: newProfile.service_ids,
+      permissions: newProfile.permissions,
+      qr_code: newProfile.qr_code,
+    };
 
-      if (!error && dbProfile) {
-        storage.saveProfile(dbProfile as UserProfile);
+    const { data: dbProfile, error } = await supabase
+      .from('profiles')
+      .insert(payload)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Supabase profile insert error:', error);
+      throw new Error(error.message || 'Failed to save servant to database.');
+    }
+
+    if (dbProfile) {
+      const saved = { ...newProfile, ...dbProfile };
+      storage.saveProfile(saved);
+
+      // Save relational records if applicable
+      for (const srvId of data.service_ids) {
+        if (isUUID(srvId)) {
+          try {
+            await supabase.from('service_servants').upsert({
+              service_id: srvId,
+              servant_id: saved.id
+            });
+          } catch (e: any) {
+            console.warn('service_servants link note:', e);
+          }
+        }
       }
-    } catch (err) {
-      console.warn('Supabase insert profile error, using local storage:', err);
+
+      try {
+        await supabase.from('qr_codes').upsert({
+          entity_type: 'servant',
+          entity_id: saved.id,
+          token: saved.qr_code,
+          status: 'active',
+          service_ids: saved.service_ids,
+        });
+      } catch (e: any) {
+        console.warn('qr_codes link note:', e);
+      }
+
+      storage.logAction(
+        'SERVANT_CREATED',
+        'user',
+        `Created servant profile for ${saved.name} (${saved.name_ar}) in Supabase`,
+        saved.id
+      );
+
+      return saved;
     }
   }
 
+  // Fallback for offline/local storage mode
   storage.saveProfile(newProfile);
-
-  // Save corresponding QR record
-  storage.saveQRCode({
-    id: 'qr-' + newId,
-    entity_type: 'servant',
-    entity_id: newId,
-    token: `SRV-${newId}`,
-    status: 'active',
-    service_ids: data.service_ids || [],
-    created_at: new Date().toISOString(),
-  });
-
-  // Update service mappings in storage
-  const services = storage.getServices();
-  for (const srvId of data.service_ids) {
-    const srv = services.find(s => s.id === srvId);
-    if (srv && !srv.servant_ids.includes(newId)) {
-      srv.servant_ids.push(newId);
-      storage.saveService(srv);
-    }
-  }
-
   storage.logAction(
     'SERVANT_CREATED',
     'user',
-    `Created servant profile for ${newProfile.name} (${newProfile.name_ar})`,
+    `Created servant profile for ${newProfile.name} (${newProfile.name_ar}) (Local Mode)`,
     newProfile.id
   );
 
@@ -151,41 +172,49 @@ const updateUser = async (id: string, updates: Partial<UserProfile>): Promise<Us
   };
 
   if (isSupabaseConfigured() && supabase) {
-    try {
-      // If email is changing, invoke synchronized RPC
-      if (updates.email && updates.email !== existing.email) {
-        await supabase.rpc('admin_update_user_email', {
-          target_user_id: id,
-          new_email: updates.email
-        });
-      }
+    // If email is changing, invoke synchronized RPC
+    if (updates.email && updates.email !== existing.email) {
+      await supabase.rpc('admin_update_user_email', {
+        target_user_id: id,
+        new_email: updates.email
+      });
+    }
 
-      const { data: dbProfile, error } = await supabase
-        .from('profiles')
-        .update({
-          name: updated.name,
-          name_ar: updated.name_ar,
-          email: updated.email,
-          phone: updated.phone,
-          whatsapp: updated.whatsapp,
-          address: updated.address,
-          bio: updated.bio,
-          role: updated.role,
-          status: updated.status,
-          service_ids: updated.service_ids,
-          group_ids: updated.group_ids,
-          permissions: updated.permissions,
-          updated_at: updated.updated_at
-        })
-        .eq('id', id)
-        .select()
-        .single();
+    const payload: any = {
+      name: updated.name,
+      name_ar: updated.name_ar,
+      email: updated.email,
+      phone: updated.phone,
+      whatsapp: updated.whatsapp,
+      address: updated.address || null,
+      bio: updated.bio || null,
+      gender: updated.gender || null,
+      date_of_birth: updated.date_of_birth || null,
+      avatar_url: updated.avatar_url || null,
+      role: updated.role,
+      status: updated.status,
+      service_ids: updated.service_ids || [],
+      permissions: updated.permissions || [],
+      qr_code: updated.qr_code,
+      updated_at: updated.updated_at
+    };
 
-      if (!error && dbProfile) {
-        storage.saveProfile(dbProfile as UserProfile);
-      }
-    } catch (err) {
-      console.warn('Supabase profile update error, updating local:', err);
+    const { data: dbProfile, error } = await supabase
+      .from('profiles')
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Supabase profile update error:', error);
+      throw new Error(error.message || 'Failed to update user in Supabase.');
+    }
+
+    if (dbProfile) {
+      const saved = { ...updated, ...dbProfile };
+      storage.saveProfile(saved);
+      return saved;
     }
   }
 
