@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { TaskPriority, TaskStatus, Member } from '../../types';
+import { TaskPriority, TaskStatus } from '../../types';
 import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
 import { useLanguage } from '../../context/LanguageContext';
 import { storage } from '../../lib/storage';
+import { serviceService } from '../../services/serviceService';
 import { taskService } from '../../services/taskService';
-import { CheckSquare, Save } from 'lucide-react';
+import { CheckSquare, Save, AlertCircle } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 interface CreateTaskModalProps {
@@ -20,41 +21,73 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   onSuccess,
 }) => {
   const { t, language } = useLanguage();
-  const servants = storage.getProfiles().filter(p => p.role === 'servant');
-  const members = storage.getMembers();
+  const services = serviceService.getAll();
+  const profiles = storage.getProfiles().filter(p => p.status !== 'disabled');
+  const members = storage.getMembers().filter(m => m.status === 'active');
   const groups = storage.getGroups();
 
   const [title, setTitle] = useState('');
   const [titleAr, setTitleAr] = useState('');
   const [description, setDescription] = useState('');
-  const [assignedTo, setAssignedTo] = useState(servants[0]?.id || '');
+  const [notes, setNotes] = useState('');
+  const [serviceId, setServiceId] = useState(services[0]?.id || '');
+  const [assignedTo, setAssignedTo] = useState(profiles[0]?.id || '');
   const [priority, setPriority] = useState<TaskPriority>('medium');
+  const [status, setStatus] = useState<TaskStatus>('pending');
   const [dueDate, setDueDate] = useState(new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0]);
+  const [dueTime, setDueTime] = useState('18:00');
   const [relatedMemberId, setRelatedMemberId] = useState('');
   const [groupId, setGroupId] = useState(groups[0]?.id || '');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const isAr = language === 'ar';
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !assignedTo) return;
+    setErrorMsg(null);
 
-    taskService.create({
-      church_id: 'church-1',
-      group_id: groupId,
-      title,
-      title_ar: titleAr || title,
-      description,
-      assigned_to: assignedTo,
-      priority,
-      status: 'pending',
-      due_date: dueDate,
-      related_member_id: relatedMemberId || undefined,
-    });
+    if (!title.trim()) {
+      setErrorMsg(isAr ? 'برجاء إدخال عنوان المهمة.' : 'Please enter a task title.');
+      return;
+    }
 
-    confetti({ particleCount: 40, spread: 60, origin: { y: 0.7 } });
-    if (onSuccess) onSuccess();
-    onClose();
+    if (!assignedTo) {
+      setErrorMsg(isAr ? 'برجاء اختيار الخادم أو الشخص المسند إليه المهمة.' : 'Please select an assigned servant or user.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await taskService.create({
+        church_id: 'church-1',
+        service_id: serviceId || undefined,
+        group_id: groupId || undefined,
+        title: title.trim(),
+        title_ar: titleAr.trim() || title.trim(),
+        description: description.trim() || undefined,
+        notes: notes.trim() || undefined,
+        assigned_to: assignedTo,
+        priority,
+        status,
+        due_date: dueDate,
+        due_time: dueTime || undefined,
+        related_member_id: relatedMemberId || undefined,
+      });
+
+      confetti({ particleCount: 40, spread: 60, origin: { y: 0.7 } });
+      if (onSuccess) onSuccess();
+      onClose();
+      // Reset form
+      setTitle('');
+      setTitleAr('');
+      setDescription('');
+      setNotes('');
+    } catch (err: any) {
+      setErrorMsg(err?.message || (isAr ? 'تعذر حفظ المهمة. برجاء المحاولة لاحقاً.' : 'Unable to create task. Please try again.'));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -68,9 +101,16 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
         </div>
       }
       subtitle={t('tasks.subtitle')}
-      maxWidth="lg"
+      maxWidth="xl"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
+        {errorMsg && (
+          <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
         {/* Task Title EN */}
         <div>
           <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
@@ -81,8 +121,8 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
             required
             value={title}
             onChange={e => setTitle(e.target.value)}
-            placeholder="e.g. Home pastoral visit for Peter Magdy"
-            className="w-full px-3.5 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+            placeholder="e.g. Pastoral home visit for Peter"
+            className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-primary-500 focus:outline-none"
           />
         </div>
 
@@ -95,13 +135,31 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
             type="text"
             value={titleAr}
             onChange={e => setTitleAr(e.target.value)}
-            placeholder="مثال: افتقاد منزلي للمخدوم بيتر مجدي"
-            className="w-full px-3.5 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+            placeholder="مثال: افتقاد منزلي للمخدوم بيتر"
+            className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-primary-500 focus:outline-none"
           />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* Assigned Servant */}
+          {/* Ministry / Service */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Ministry / Service *
+            </label>
+            <select
+              value={serviceId}
+              onChange={e => setServiceId(e.target.value)}
+              className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+            >
+              {services.map(s => (
+                <option key={s.id} value={s.id}>
+                  {isAr ? s.name_ar : s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Assigned User */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
               {t('tasks.assignedTo')} *
@@ -111,11 +169,13 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
               onChange={e => setAssignedTo(e.target.value)}
               className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-primary-500 focus:outline-none"
             >
-              {servants.map(s => (
-                <option key={s.id} value={s.id}>
-                  {isAr ? (s.name_ar || s.name) : s.name}
-                </option>
-              ))}
+              <optgroup label="Servants & Leaders">
+                {profiles.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {isAr ? (p.name_ar || p.name) : p.name} ({p.role})
+                  </option>
+                ))}
+              </optgroup>
             </select>
           </div>
 
@@ -136,6 +196,23 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
             </select>
           </div>
 
+          {/* Initial Status */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Initial Status
+            </label>
+            <select
+              value={status}
+              onChange={e => setStatus(e.target.value as TaskStatus)}
+              className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+            >
+              <option value="pending">{t('tasks.pending')}</option>
+              <option value="in_progress">{t('tasks.inProgress')}</option>
+              <option value="completed">{t('tasks.completed')}</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+
           {/* Due Date */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
@@ -150,20 +227,33 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
             />
           </div>
 
-          {/* Related Member */}
+          {/* Due Time */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              {t('tasks.relatedMember')}
+              Due Time (Optional)
+            </label>
+            <input
+              type="time"
+              value={dueTime}
+              onChange={e => setDueTime(e.target.value)}
+              className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+            />
+          </div>
+
+          {/* Related Member */}
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              {t('tasks.relatedMember')} (Optional)
             </label>
             <select
               value={relatedMemberId}
               onChange={e => setRelatedMemberId(e.target.value)}
               className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-primary-500 focus:outline-none"
             >
-              <option value="">None / General Task</option>
+              <option value="">None / General Pastoral Task</option>
               {members.map(m => (
                 <option key={m.id} value={m.id}>
-                  {isAr ? m.arabic_name : m.full_name}
+                  {isAr ? m.arabic_name : m.full_name} ({m.phone})
                 </option>
               ))}
             </select>
@@ -179,17 +269,31 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
             rows={2}
             value={description}
             onChange={e => setDescription(e.target.value)}
-            placeholder="Detailed instructions or context for the servant..."
+            placeholder="Detailed pastoral instructions or background context..."
+            className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+          />
+        </div>
+
+        {/* Notes */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+            Private Pastoral Notes
+          </label>
+          <textarea
+            rows={2}
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            placeholder="Confidential follow-up notes visible to leaders..."
             className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-primary-500 focus:outline-none"
           />
         </div>
 
         {/* Actions */}
         <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
-          <Button variant="ghost" type="button" onClick={onClose}>
+          <Button variant="ghost" type="button" onClick={onClose} disabled={isSubmitting}>
             {t('common.cancel')}
           </Button>
-          <Button variant="primary" type="submit" icon={<Save className="w-4 h-4" />}>
+          <Button variant="primary" type="submit" isLoading={isSubmitting} icon={<Save className="w-4 h-4" />}>
             {t('common.create')}
           </Button>
         </div>

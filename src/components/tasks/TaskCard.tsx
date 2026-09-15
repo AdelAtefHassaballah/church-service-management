@@ -12,7 +12,8 @@ import {
   User, 
   ArrowRight,
   MoreVertical,
-  Check
+  Check,
+  Trash2
 } from 'lucide-react';
 
 interface TaskCardProps {
@@ -20,6 +21,7 @@ interface TaskCardProps {
   servant?: UserProfile;
   onStatusChange: (taskId: string, status: TaskStatus) => void;
   onViewDetails?: (task: Task) => void;
+  onDelete?: (taskId: string) => void;
 }
 
 export const TaskCard: React.FC<TaskCardProps> = ({
@@ -27,6 +29,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   servant,
   onStatusChange,
   onViewDetails,
+  onDelete,
 }) => {
   const { t, language } = useLanguage();
   const { user, role } = useAuth();
@@ -116,6 +119,16 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">
               <CheckCircle2 className="w-4 h-4" />
             </span>
+          )}
+
+          {onDelete && (
+            <button
+              onClick={() => onDelete(task.id)}
+              className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all text-xs font-bold flex items-center"
+              title={t('common.delete')}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
           )}
         </div>
       </div>

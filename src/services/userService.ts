@@ -1,8 +1,27 @@
 import { UserProfile, Role, Permission, UserStatus } from '../types';
 import { storage } from '../lib/storage';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { DEFAULT_ROLE_PERMISSIONS } from '../lib/permissions';
 
 const getAll = (): UserProfile[] => {
+  return storage.getProfiles();
+};
+
+const fetchAll = async (): Promise<UserProfile[]> => {
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (!error && data) {
+        data.forEach((p: any) => storage.saveProfile(p));
+        return data as UserProfile[];
+      }
+    } catch (err) {
+      console.warn('Supabase fetch profiles error, using local fallback:', err);
+    }
+  }
   return storage.getProfiles();
 };
 
@@ -10,7 +29,7 @@ const getById = (id: string): UserProfile | undefined => {
   return storage.getProfileById(id);
 };
 
-const createServant = (data: {
+const createServant = async (data: {
   name: string;
   name_ar?: string;
   email: string;
@@ -26,7 +45,7 @@ const createServant = (data: {
   avatar_url?: string;
   permissions?: Permission[];
   status?: UserStatus;
-}): UserProfile => {
+}): Promise<UserProfile> => {
   const newId = 'usr-servant-' + Date.now();
   const targetRole = data.role || 'servant';
   const initialPerms = data.permissions || DEFAULT_ROLE_PERMISSIONS[targetRole] || [];
@@ -49,9 +68,43 @@ const createServant = (data: {
     group_ids: data.group_ids || [],
     permissions: initialPerms,
     status: data.status || 'active',
-    qr_code: `servant:${newId}`,
+    qr_code: `SRV-${newId}`,
     created_at: new Date().toISOString(),
   };
+
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      const { data: dbProfile, error } = await supabase
+        .from('profiles')
+        .insert({
+          id: newProfile.id,
+          church_id: newProfile.church_id,
+          email: newProfile.email,
+          name: newProfile.name,
+          name_ar: newProfile.name_ar,
+          role: newProfile.role,
+          phone: newProfile.phone,
+          whatsapp: newProfile.whatsapp,
+          address: newProfile.address,
+          bio: newProfile.bio,
+          gender: newProfile.gender,
+          date_of_birth: newProfile.date_of_birth,
+          status: newProfile.status,
+          service_ids: newProfile.service_ids,
+          group_ids: newProfile.group_ids,
+          permissions: newProfile.permissions,
+          qr_code: newProfile.qr_code,
+        })
+        .select()
+        .single();
+
+      if (!error && dbProfile) {
+        storage.saveProfile(dbProfile as UserProfile);
+      }
+    } catch (err) {
+      console.warn('Supabase insert profile error, using local storage:', err);
+    }
+  }
 
   storage.saveProfile(newProfile);
 
@@ -60,7 +113,7 @@ const createServant = (data: {
     id: 'qr-' + newId,
     entity_type: 'servant',
     entity_id: newId,
-    token: `servant:${newId}`,
+    token: `SRV-${newId}`,
     status: 'active',
     service_ids: data.service_ids || [],
     created_at: new Date().toISOString(),
@@ -79,14 +132,14 @@ const createServant = (data: {
   storage.logAction(
     'SERVANT_CREATED',
     'user',
-    `Super Admin created servant profile for ${newProfile.name} (${newProfile.name_ar})`,
+    `Created servant profile for ${newProfile.name} (${newProfile.name_ar})`,
     newProfile.id
   );
 
   return newProfile;
 };
 
-const updateUser = (id: string, updates: Partial<UserProfile>): UserProfile | null => {
+const updateUser = async (id: string, updates: Partial<UserProfile>): Promise<UserProfile | null> => {
   const existing = storage.getProfileById(id);
   if (!existing) return null;
   const prevRole = existing.role;
@@ -96,6 +149,45 @@ const updateUser = (id: string, updates: Partial<UserProfile>): UserProfile | nu
     ...updates,
     updated_at: new Date().toISOString(),
   };
+
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      // If email is changing, invoke synchronized RPC
+      if (updates.email && updates.email !== existing.email) {
+        await supabase.rpc('admin_update_user_email', {
+          target_user_id: id,
+          new_email: updates.email
+        });
+      }
+
+      const { data: dbProfile, error } = await supabase
+        .from('profiles')
+        .update({
+          name: updated.name,
+          name_ar: updated.name_ar,
+          email: updated.email,
+          phone: updated.phone,
+          whatsapp: updated.whatsapp,
+          address: updated.address,
+          bio: updated.bio,
+          role: updated.role,
+          status: updated.status,
+          service_ids: updated.service_ids,
+          group_ids: updated.group_ids,
+          permissions: updated.permissions,
+          updated_at: updated.updated_at
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (!error && dbProfile) {
+        storage.saveProfile(dbProfile as UserProfile);
+      }
+    } catch (err) {
+      console.warn('Supabase profile update error, updating local:', err);
+    }
+  }
 
   storage.saveProfile(updated);
 
@@ -120,11 +212,59 @@ const updateUser = (id: string, updates: Partial<UserProfile>): UserProfile | nu
   return updated;
 };
 
-const updatePermissions = (id: string, permissions: Permission[]): void => {
+const sendPasswordResetEmail = async (email: string): Promise<{ success: boolean; message?: string }> => {
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin + '/reset-password',
+      });
+      if (error) throw error;
+      return { success: true, message: 'Password reset link sent to ' + email };
+    } catch (err: any) {
+      console.warn('Supabase password reset error:', err);
+      return { success: false, message: err.message || 'Failed to send reset email' };
+    }
+  }
+
+  storage.logAction('PASSWORD_RESET_DISPATCHED', 'auth', `Simulated password reset link dispatched to ${email}`);
+  return { success: true, message: 'Password reset instructions dispatched to ' + email };
+};
+
+const adminResetPassword = async (userId: string, newPassword: string): Promise<{ success: boolean; message?: string }> => {
+  if (newPassword.length < 8) {
+    return { success: false, message: 'Password must be at least 8 characters' };
+  }
+
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      const { error } = await supabase.rpc('admin_reset_user_password', {
+        target_user_id: userId,
+        new_password: newPassword
+      });
+      if (error) throw error;
+      return { success: true, message: 'Password successfully updated' };
+    } catch (err: any) {
+      console.warn('Supabase admin reset password error:', err);
+    }
+  }
+
+  storage.logAction('ADMIN_PASSWORD_RESET', 'auth', `Super Admin reset password for user ID ${userId}`, userId);
+  return { success: true, message: 'Password updated successfully' };
+};
+
+const updatePermissions = async (id: string, permissions: Permission[]): Promise<void> => {
   const existing = storage.getProfileById(id);
   if (!existing) return;
 
   existing.permissions = permissions;
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      await supabase.from('profiles').update({ permissions }).eq('id', id);
+    } catch (err) {
+      console.warn('Supabase update permissions error:', err);
+    }
+  }
+
   storage.saveProfile(existing);
   storage.logAction(
     'PERMISSIONS_UPDATED',
@@ -134,10 +274,19 @@ const updatePermissions = (id: string, permissions: Permission[]): void => {
   );
 };
 
-const disableAccount = (id: string): void => {
+const disableAccount = async (id: string): Promise<void> => {
   const user = storage.getProfileById(id);
   if (!user) return;
   user.status = 'disabled';
+
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      await supabase.from('profiles').update({ status: 'disabled' }).eq('id', id);
+    } catch (err) {
+      console.warn('Supabase disable user error:', err);
+    }
+  }
+
   storage.saveProfile(user);
   storage.logAction(
     'ACCOUNT_DISABLED',
@@ -149,10 +298,19 @@ const disableAccount = (id: string): void => {
   );
 };
 
-const enableAccount = (id: string): void => {
+const enableAccount = async (id: string): Promise<void> => {
   const user = storage.getProfileById(id);
   if (!user) return;
   user.status = 'active';
+
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      await supabase.from('profiles').update({ status: 'active' }).eq('id', id);
+    } catch (err) {
+      console.warn('Supabase enable user error:', err);
+    }
+  }
+
   storage.saveProfile(user);
   storage.logAction(
     'ACCOUNT_ENABLED',
@@ -164,9 +322,16 @@ const enableAccount = (id: string): void => {
   );
 };
 
-const deleteUser = (id: string): void => {
+const deleteUser = async (id: string): Promise<void> => {
   const user = storage.getProfileById(id);
   if (user) {
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        await supabase.from('profiles').delete().eq('id', id);
+      } catch (err) {
+        console.warn('Supabase delete user error:', err);
+      }
+    }
     storage.deleteProfile(id);
     storage.logAction('USER_DELETED', 'user', `Permanently deleted user ${user.name}`, id);
   }
@@ -174,11 +339,14 @@ const deleteUser = (id: string): void => {
 
 export const userService = {
   getAll,
+  fetchAll,
   getById,
   createServant,
   create: createServant,
   updateUser,
   update: updateUser,
+  sendPasswordResetEmail,
+  adminResetPassword,
   updatePermissions,
   disableAccount,
   disableUser: disableAccount,

@@ -123,11 +123,11 @@ export const SettingsPage: React.FC = () => {
             </div>
 
             <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs space-y-1.5">
-              <Badge variant={isSupabaseConfigured ? 'success' : 'neutral'} size="sm">
-                {isSupabaseConfigured ? 'Connected (Production)' : 'Local Storage Mode'}
+              <Badge variant={isSupabaseConfigured() ? 'success' : 'neutral'} size="sm">
+                {isSupabaseConfigured() ? 'Connected (Production)' : 'Local Storage Mode'}
               </Badge>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                {isSupabaseConfigured 
+                {isSupabaseConfigured() 
                   ? 'Connected live to your Supabase PostgreSQL database with Row Level Security.' 
                   : 'Operating in local offline storage mode. Configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to connect cloud database.'}
               </p>

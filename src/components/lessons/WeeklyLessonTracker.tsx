@@ -1,29 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { WeeklyLesson, LessonSubmissionStatus } from '../../types';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAuth } from '../../context/AuthContext';
 import { storage } from '../../lib/storage';
 import { lessonService } from '../../services/lessonService';
-import { whatsappService } from '../../services/whatsappService';
 import { Button } from '../common/Button';
 import { Badge } from '../common/Badge';
 import { WhatsAppModal } from '../common/WhatsAppModal';
 import { 
   BookOpenCheck, 
   Clock, 
-  CheckCircle2, 
-  AlertCircle, 
-  XCircle, 
   Plus, 
   MessageSquare, 
   FileText, 
-  Send,
   Eye,
+  Filter,
+  Edit2,
   Calendar
 } from 'lucide-react';
 
 interface WeeklyLessonTrackerProps {
-  onOpenSubmitModal: () => void;
+  onOpenSubmitModal: (lesson?: WeeklyLesson) => void;
   onViewLesson: (lesson: WeeklyLesson) => void;
 }
 
@@ -33,18 +30,37 @@ export const WeeklyLessonTracker: React.FC<WeeklyLessonTrackerProps> = ({
 }) => {
   const { t, language } = useLanguage();
   const { role, user } = useAuth();
-  const servants = storage.getProfiles().filter(p => p.role === 'servant');
-  const groups = storage.getGroups();
-  const lessons = storage.getLessons();
-
-  const [selectedDate, setSelectedDate] = useState('2026-09-18');
-  const [selectedServantForWhatsApp, setSelectedServantForWhatsApp] = useState<any | null>(null);
-
-  const stats = lessonService.getStatsForWeek(selectedDate);
   const isAr = language === 'ar';
 
+  const services = storage.getServices();
+  const groups = storage.getGroups();
+  const servants = storage.getProfiles().filter(p => p.role === 'servant');
+
+  const [lessons, setLessons] = useState<WeeklyLesson[]>([]);
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedServiceId, setSelectedServiceId] = useState<string>('all');
+  const [selectedServantForWhatsApp, setSelectedServantForWhatsApp] = useState<any | null>(null);
+
+  const loadLessons = async () => {
+    const data = await lessonService.getAll();
+    setLessons(data);
+  };
+
+  useEffect(() => {
+    loadLessons();
+  }, []);
+
+  const filteredServants = servants.filter(s => {
+    if (selectedServiceId !== 'all') {
+      return s.service_ids?.includes(selectedServiceId);
+    }
+    return true;
+  });
+
+  const stats = lessonService.getStatsForWeek(selectedDate, selectedServiceId);
+
   const handleSendReminderToAllMissing = () => {
-    const missingServants = servants.filter(s => {
+    const missingServants = filteredServants.filter(s => {
       const sub = lessons.find(l => l.servant_id === s.id && l.lesson_date === selectedDate);
       return !sub || sub.status === 'missing';
     });
@@ -54,9 +70,11 @@ export const WeeklyLessonTracker: React.FC<WeeklyLessonTrackerProps> = ({
       return;
     }
 
-    // Trigger WhatsApp modal for the first missing servant
     setSelectedServantForWhatsApp(missingServants[0]);
   };
+
+  const isServant = role === 'servant';
+  const mySubmittedLesson = isServant ? lessons.find(l => l.servant_id === user?.id && l.lesson_date === selectedDate) : null;
 
   return (
     <div className="space-y-4">
@@ -75,14 +93,14 @@ export const WeeklyLessonTracker: React.FC<WeeklyLessonTrackerProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          {role === 'servant' ? (
+          {isServant ? (
             <Button
               variant="gold"
               size="sm"
-              onClick={onOpenSubmitModal}
-              icon={<Plus className="w-4 h-4" />}
+              onClick={() => onOpenSubmitModal(mySubmittedLesson || undefined)}
+              icon={mySubmittedLesson ? <Edit2 className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
             >
-              {t('lessons.submitLesson')}
+              {mySubmittedLesson ? (isAr ? 'تعديل التحضير' : 'Edit My Lesson') : t('lessons.submitLesson')}
             </Button>
           ) : (
             <Button
@@ -94,6 +112,43 @@ export const WeeklyLessonTracker: React.FC<WeeklyLessonTrackerProps> = ({
               {t('lessons.sendReminderToMissing')}
             </Button>
           )}
+        </div>
+      </div>
+
+      {/* Filter Toolbar */}
+      <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 text-slate-500 font-semibold">
+            <Filter className="w-3.5 h-3.5 text-primary-500" />
+            <span>{isAr ? 'تصفية حسب:' : 'Filter by:'}</span>
+          </div>
+
+          <select
+            value={selectedServiceId}
+            onChange={(e) => setSelectedServiceId(e.target.value)}
+            className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-semibold focus:outline-none"
+          >
+            <option value="all">{isAr ? 'جميع الخدمات / القطاعات' : 'All Ministries / Services'}</option>
+            {services.map(s => (
+              <option key={s.id} value={s.id}>
+                {isAr ? (s.name_ar || s.name) : s.name}
+              </option>
+            ))}
+          </select>
+
+          <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded-xl border border-slate-200 dark:border-slate-700">
+            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={e => setSelectedDate(e.target.value)}
+              className="bg-transparent text-slate-800 dark:text-slate-200 font-semibold focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <div className="text-slate-400 font-medium">
+          {stats.totalActiveServants} {isAr ? 'خادم مسجل' : 'servants active'}
         </div>
       </div>
 
@@ -139,20 +194,10 @@ export const WeeklyLessonTracker: React.FC<WeeklyLessonTrackerProps> = ({
             <BookOpenCheck className="w-4 h-4 text-primary-600" />
             <span>{t('lessons.title')} ({selectedDate})</span>
           </h4>
-
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-slate-400">{t('attendance.selectDate')}:</label>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={e => setSelectedDate(e.target.value)}
-              className="text-xs px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-semibold focus:outline-none"
-            />
-          </div>
         </div>
 
         <div className="divide-y divide-slate-100 dark:divide-slate-800">
-          {servants.map((servant) => {
+          {filteredServants.map((servant) => {
             const lesson = lessons.find(
               l => l.servant_id === servant.id && l.lesson_date === selectedDate
             );
@@ -183,7 +228,7 @@ export const WeeklyLessonTracker: React.FC<WeeklyLessonTrackerProps> = ({
                     </div>
                     {lesson ? (
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        "{lesson.title}" • {lesson.attachments.length} attachments
+                        "{lesson.title}" • {lesson.attachments?.length || 0} attachments
                       </p>
                     ) : (
                       <p className="text-xs text-rose-500 font-medium mt-0.5">
@@ -208,14 +253,26 @@ export const WeeklyLessonTracker: React.FC<WeeklyLessonTrackerProps> = ({
                   </Badge>
 
                   {lesson ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onViewLesson(lesson)}
-                      icon={<Eye className="w-3.5 h-3.5" />}
-                    >
-                      {t('common.view')}
-                    </Button>
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onViewLesson(lesson)}
+                        icon={<Eye className="w-3.5 h-3.5" />}
+                      >
+                        {t('common.view')}
+                      </Button>
+                      {(isServant && servant.id === user?.id) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onOpenSubmitModal(lesson)}
+                          icon={<Edit2 className="w-3.5 h-3.5 text-primary-600" />}
+                        >
+                          {isAr ? 'تعديل' : 'Edit'}
+                        </Button>
+                      )}
+                    </div>
                   ) : (
                     <Button
                       variant="outline"

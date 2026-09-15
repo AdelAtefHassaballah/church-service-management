@@ -170,8 +170,9 @@ export type AttendanceStatus = 'present' | 'absent' | 'excused';
 export interface AttendanceRecord {
   id: string;
   church_id: string;
-  service_id?: string;
-  group_id: string;
+  service_id: string; // Mandatory service/ministry
+  group_id?: string;
+  session_name?: string; // e.g. "Regular Sunday School", "Friday Youth Meeting"
   member_id: string;
   date: string; // YYYY-MM-DD
   status: AttendanceStatus;
@@ -207,7 +208,7 @@ export interface MemberNote {
   created_at: string;
 }
 
-export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'overdue';
+export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled' | 'overdue';
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
 
 export interface Task {
@@ -218,11 +219,13 @@ export interface Task {
   title: string;
   title_ar?: string;
   description?: string;
-  assigned_to: string; // Servant ID
+  assigned_to: string; // Servant or User ID
   created_by: string; // Leader or Admin ID
   priority: TaskPriority;
   status: TaskStatus;
   due_date: string;
+  due_time?: string;
+  notes?: string;
   related_member_id?: string;
   attachments?: string[];
   comments_count?: number;
@@ -243,6 +246,10 @@ export interface CalendarEvent {
   start_time: string; // HH:MM
   end_time: string; // HH:MM
   location?: string;
+  organizer?: string;
+  visibility?: 'all' | 'service_members' | 'servants_only' | 'leaders_only';
+  reminder?: string;
+  attachments?: string[];
   created_by: string;
   assigned_servant_ids?: string[];
   related_member_ids?: string[];

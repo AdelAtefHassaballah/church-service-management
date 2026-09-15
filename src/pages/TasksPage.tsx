@@ -13,25 +13,40 @@ import { CheckSquare, Plus, Filter, Search } from 'lucide-react';
 export const TasksPage: React.FC = () => {
   const { t, language } = useLanguage();
   const { role, user } = useAuth();
-  const servants = storage.getProfiles().filter(p => p.role === 'servant');
+  const services = storage.getServices();
+  const profiles = storage.getProfiles();
+  const servants = profiles.filter(p => p.role === 'servant');
 
   const [tasks, setTasks] = useState<Task[]>(() => storage.getTasks());
+  const [selectedService, setSelectedService] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedPriority, setSelectedPriority] = useState<string>('all');
-  const [selectedServant, setSelectedServant] = useState<string>('all');
+  const [selectedUser, setSelectedUser] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   const isAr = language === 'ar';
-  const canCreate = role === 'admin' || role === 'leader';
+  const canCreate = role === 'super_admin' || role === 'admin' || role === 'leader';
 
-  const refreshTasks = () => {
-    setTasks(storage.getTasks());
+  const refreshTasks = async () => {
+    const list = await taskService.getAll();
+    setTasks(list);
   };
 
-  const handleStatusChange = (taskId: string, status: TaskStatus) => {
-    taskService.updateStatus(taskId, status);
+  React.useEffect(() => {
     refreshTasks();
+  }, []);
+
+  const handleStatusChange = async (taskId: string, status: TaskStatus) => {
+    await taskService.updateStatus(taskId, status);
+    refreshTasks();
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    if (window.confirm(isAr ? 'هل أنت متأكد من حذف هذه المهمة؟' : 'Delete this task?')) {
+      await taskService.delete(taskId);
+      refreshTasks();
+    }
   };
 
   let filteredTasks = tasks.filter(t => {
@@ -39,9 +54,10 @@ export const TasksPage: React.FC = () => {
       // Servants see primarily their own tasks
       return false;
     }
+    if (selectedService !== 'all' && t.service_id !== selectedService) return false;
     if (selectedStatus !== 'all' && t.status !== selectedStatus) return false;
     if (selectedPriority !== 'all' && t.priority !== selectedPriority) return false;
-    if (selectedServant !== 'all' && t.assigned_to !== selectedServant) return false;
+    if (selectedUser !== 'all' && t.assigned_to !== selectedUser) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       const matchTitle = t.title.toLowerCase().includes(q) || (t.title_ar && t.title_ar.includes(q));
@@ -78,7 +94,7 @@ export const TasksPage: React.FC = () => {
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-sm grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         {/* Search */}
         <div className="relative">
           <Search className="w-4 h-4 text-slate-400 absolute top-2.5 left-3 rtl:left-auto rtl:right-3" />
@@ -91,6 +107,20 @@ export const TasksPage: React.FC = () => {
           />
         </div>
 
+        {/* Service Filter */}
+        <select
+          value={selectedService}
+          onChange={e => setSelectedService(e.target.value)}
+          className="px-3 py-2 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none"
+        >
+          <option value="all">All Services / Ministries</option>
+          {services.map(s => (
+            <option key={s.id} value={s.id}>
+              {isAr ? s.name_ar : s.name}
+            </option>
+          ))}
+        </select>
+
         {/* Status Filter */}
         <select
           value={selectedStatus}
@@ -101,6 +131,7 @@ export const TasksPage: React.FC = () => {
           <option value="pending">{t('tasks.pending')}</option>
           <option value="in_progress">{t('tasks.inProgress')}</option>
           <option value="completed">{t('tasks.completed')}</option>
+          <option value="cancelled">Cancelled</option>
           <option value="overdue">{t('tasks.overdue')}</option>
         </select>
 
@@ -117,17 +148,17 @@ export const TasksPage: React.FC = () => {
           <option value="low">{t('tasks.low')}</option>
         </select>
 
-        {/* Servant Filter (Admins/Leaders) */}
+        {/* Assigned User Filter */}
         {role !== 'servant' && (
           <select
-            value={selectedServant}
-            onChange={e => setSelectedServant(e.target.value)}
+            value={selectedUser}
+            onChange={e => setSelectedUser(e.target.value)}
             className="px-3 py-2 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none"
           >
-            <option value="all">{t('members.allServants')}</option>
-            {servants.map(s => (
-              <option key={s.id} value={s.id}>
-                {isAr ? (s.name_ar || s.name) : s.name}
+            <option value="all">All Assigned Users</option>
+            {profiles.map(p => (
+              <option key={p.id} value={p.id}>
+                {isAr ? (p.name_ar || p.name) : p.name}
               </option>
             ))}
           </select>
@@ -138,9 +169,9 @@ export const TasksPage: React.FC = () => {
       {filteredTasks.length === 0 ? (
         <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-200/80 dark:border-slate-800">
           <EmptyState
-            icon={<CheckSquare className="w-8 h-8" />}
+            icon={<CheckSquare className="w-8 h-8 text-slate-400" />}
             title="No tasks found."
-            description="All service tasks have been completed or match filters."
+            description="No pastoral tasks created yet or matching the filters."
           />
         </div>
       ) : (
@@ -149,8 +180,9 @@ export const TasksPage: React.FC = () => {
             <TaskCard
               key={task.id}
               task={task}
-              servant={servants.find(s => s.id === task.assigned_to)}
+              servant={profiles.find(s => s.id === task.assigned_to)}
               onStatusChange={handleStatusChange}
+              onDelete={canCreate ? handleDeleteTask : undefined}
             />
           ))}
         </div>
@@ -165,3 +197,5 @@ export const TasksPage: React.FC = () => {
     </div>
   );
 };
+
+

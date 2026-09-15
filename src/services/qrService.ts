@@ -21,24 +21,30 @@ export const qrService = {
     const members = storage.getMembers();
     const servants = storage.getProfiles();
 
-    // Format: member:mbr-1001 or servant:usr-servant-1 or raw KHEDMA-MBR-1001
+    // Format: MEM-<id> or SRV-<id> or member:<id> or servant:<id> or raw ID
     let entityType: QRCodeEntityType = 'member';
     let entityId = '';
 
-    if (trimmed.startsWith('servant:')) {
+    if (trimmed.startsWith('SRV-') || trimmed.startsWith('servant:')) {
       entityType = 'servant';
-      entityId = trimmed.replace('servant:', '');
-    } else if (trimmed.startsWith('member:')) {
+      entityId = trimmed.replace('SRV-', '').replace('servant:', '');
+    } else if (trimmed.startsWith('MEM-') || trimmed.startsWith('member:')) {
       entityType = 'member';
-      entityId = trimmed.replace('member:', '');
+      entityId = trimmed.replace('MEM-', '').replace('member:', '');
     } else {
-      // Legacy or token search
-      const memberMatch = members.find(m => m.qr_code.toLowerCase() === trimmed.toLowerCase() || m.id.toLowerCase() === trimmed.toLowerCase());
+      // Direct token search in members
+      const memberMatch = members.find(m => 
+        (m.qr_code && m.qr_code.toLowerCase() === trimmed.toLowerCase()) || 
+        m.id.toLowerCase() === trimmed.toLowerCase()
+      );
       if (memberMatch) {
         entityType = 'member';
         entityId = memberMatch.id;
       } else {
-        const servantMatch = servants.find(s => s.qr_code?.toLowerCase() === trimmed.toLowerCase() || s.id.toLowerCase() === trimmed.toLowerCase());
+        const servantMatch = servants.find(s => 
+          (s.qr_code && s.qr_code.toLowerCase() === trimmed.toLowerCase()) || 
+          s.id.toLowerCase() === trimmed.toLowerCase()
+        );
         if (servantMatch) {
           entityType = 'servant';
           entityId = servantMatch.id;
@@ -52,8 +58,13 @@ export const qrService = {
       const member = members.find(m => m.id === entityId || m.qr_code === trimmed);
       if (!member) return { entityType: 'member', entityId, isValid: false, assignedServices: [] };
 
-      const memberServices = member.service_ids || ['srv-prep'];
-      const isMismatch = currentServiceId && currentServiceId !== 'all' ? !memberServices.includes(currentServiceId) : false;
+      const memberServices = member.service_ids && member.service_ids.length > 0
+        ? member.service_ids
+        : ['srv-prep'];
+
+      const isMismatch = currentServiceId && currentServiceId !== 'all'
+        ? !memberServices.includes(currentServiceId)
+        : false;
 
       return {
         entityType: 'member',
@@ -67,8 +78,13 @@ export const qrService = {
       const servant = servants.find(s => s.id === entityId || s.qr_code === trimmed);
       if (!servant) return { entityType: 'servant', entityId, isValid: false, assignedServices: [] };
 
-      const servantServices = servant.service_ids || ['srv-prep'];
-      const isMismatch = currentServiceId && currentServiceId !== 'all' ? !servantServices.includes(currentServiceId) : false;
+      const servantServices = servant.service_ids && servant.service_ids.length > 0
+        ? servant.service_ids
+        : ['srv-prep'];
+
+      const isMismatch = currentServiceId && currentServiceId !== 'all'
+        ? !servantServices.includes(currentServiceId)
+        : false;
 
       return {
         entityType: 'servant',
@@ -104,7 +120,9 @@ export const qrService = {
       entityType = (entityIdOrType as QRCodeEntityType) || 'member';
     }
 
-    const newToken = `${entityType}:${entityId}-${Date.now().toString().slice(-4)}`;
+    // Opaque token format: MEM-<id> or SRV-<id> (Zero PII)
+    const prefix = entityType === 'servant' ? 'SRV' : 'MEM';
+    const newToken = `${prefix}-${entityId}`;
 
     if (entityType === 'member') {
       const member = storage.getMemberById(entityId);
@@ -133,7 +151,7 @@ export const qrService = {
     storage.logAction(
       'QR_REGENERATED',
       'qr_code',
-      `Regenerated QR badge for ${entityType} ID: ${entityId} with token: ${newToken}`,
+      `Regenerated opaque QR badge for ${entityType} ID: ${entityId}`,
       entityId
     );
 

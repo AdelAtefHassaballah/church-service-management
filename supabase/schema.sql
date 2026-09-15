@@ -41,7 +41,7 @@ EXCEPTION
 END $$;
 
 DO $$ BEGIN
-    CREATE TYPE task_status AS ENUM ('pending', 'in_progress', 'completed', 'overdue');
+    CREATE TYPE task_status AS ENUM ('pending', 'in_progress', 'completed', 'cancelled', 'overdue');
 EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
@@ -190,16 +190,17 @@ CREATE TABLE IF NOT EXISTS public.qr_codes (
 CREATE TABLE IF NOT EXISTS public.attendance_records (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     church_id UUID REFERENCES public.churches(id) ON DELETE CASCADE,
-    service_id UUID REFERENCES public.services(id) ON DELETE SET NULL,
+    service_id UUID REFERENCES public.services(id) ON DELETE CASCADE NOT NULL,
     group_id TEXT,
-    member_id UUID REFERENCES public.members(id) ON DELETE CASCADE,
+    session_name TEXT DEFAULT 'Regular Meeting' NOT NULL,
+    member_id UUID REFERENCES public.members(id) ON DELETE CASCADE NOT NULL,
     date DATE NOT NULL,
     status attendance_status NOT NULL DEFAULT 'present',
     recorded_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     notes TEXT,
     method TEXT DEFAULT 'manual' NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    CONSTRAINT unique_member_attendance_per_date UNIQUE (member_id, date)
+    CONSTRAINT unique_member_attendance_per_service_date UNIQUE (member_id, service_id, date, session_name)
 );
 
 -- 13. Servant Attendance & Check-in Table
@@ -238,11 +239,13 @@ CREATE TABLE IF NOT EXISTS public.tasks (
     title TEXT NOT NULL,
     title_ar TEXT,
     description TEXT,
-    assigned_to UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    assigned_to UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
     created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     priority task_priority DEFAULT 'medium' NOT NULL,
     status task_status DEFAULT 'pending' NOT NULL,
     due_date DATE NOT NULL,
+    due_time TEXT,
+    notes TEXT,
     related_member_id UUID REFERENCES public.members(id) ON DELETE SET NULL,
     attachments JSONB DEFAULT '[]'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
@@ -255,7 +258,7 @@ CREATE TABLE IF NOT EXISTS public.weekly_lessons (
     church_id UUID REFERENCES public.churches(id) ON DELETE CASCADE,
     service_id UUID REFERENCES public.services(id) ON DELETE SET NULL,
     group_id TEXT,
-    servant_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    servant_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
     title TEXT NOT NULL,
     lesson_date DATE NOT NULL,
     deadline TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -282,6 +285,10 @@ CREATE TABLE IF NOT EXISTS public.calendar_events (
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
     location TEXT,
+    organizer TEXT,
+    visibility TEXT DEFAULT 'all' NOT NULL,
+    reminder TEXT,
+    attachments JSONB DEFAULT '[]'::jsonb,
     created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     assigned_servant_ids JSONB DEFAULT '[]'::jsonb,
     related_member_ids JSONB DEFAULT '[]'::jsonb,
@@ -585,3 +592,74 @@ CREATE POLICY "Users update own avatar" ON storage.objects
 -- Lesson files storage policy: authenticated read/write with service scope
 CREATE POLICY "Authenticated access lesson files" ON storage.objects
     FOR ALL USING (bucket_id = 'lesson_files' AND auth.uid() IS NOT NULL);
+
+-- ========================================================================
+-- SUPER ADMIN ADMINISTRATIVE RPC PROCEDURES (Security Definer)
+-- ========================================================================
+
+-- 1. Super Admin: Update user email in auth.users and public.profiles synchronously
+CREATE OR REPLACE FUNCTION public.admin_update_user_email(
+    target_user_id UUID,
+    new_email TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+BEGIN
+    IF NOT public.is_super_admin() THEN
+        RAISE EXCEPTION 'Access denied. Super Admin privileges required.';
+    END IF;
+
+    -- Update auth.users
+    UPDATE auth.users
+    SET email = new_email,
+        email_confirmed_at = NOW(),
+        updated_at = NOW()
+    WHERE id = target_user_id;
+
+    -- Update public.profiles
+    UPDATE public.profiles
+    SET email = new_email,
+        updated_at = NOW()
+    WHERE id = target_user_id;
+
+    INSERT INTO public.audit_logs (user_id, user_name, action, entity_type, entity_id, details)
+    VALUES (auth.uid(), 'Super Admin', 'ADMIN_UPDATE_EMAIL', 'user', target_user_id, 'Updated user email to ' || new_email);
+
+    RETURN jsonb_build_object('success', true, 'email', new_email);
+END;
+$$;
+
+-- 2. Super Admin: Administrative password reset in auth.users
+CREATE OR REPLACE FUNCTION public.admin_reset_user_password(
+    target_user_id UUID,
+    new_password TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+BEGIN
+    IF NOT public.is_super_admin() THEN
+        RAISE EXCEPTION 'Access denied. Super Admin privileges required.';
+    END IF;
+
+    IF LENGTH(new_password) < 8 THEN
+        RAISE EXCEPTION 'Password must be at least 8 characters long.';
+    END IF;
+
+    -- Update auth.users password hash securely
+    UPDATE auth.users
+    SET encrypted_password = crypt(new_password, gen_salt('bf')),
+        updated_at = NOW()
+    WHERE id = target_user_id;
+
+    INSERT INTO public.audit_logs (user_id, user_name, action, entity_type, entity_id, details)
+    VALUES (auth.uid(), 'Super Admin', 'ADMIN_RESET_PASSWORD', 'user', target_user_id, 'Administrative password reset executed');
+
+    RETURN jsonb_build_object('success', true);
+END;
+$$;

@@ -29,7 +29,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let isMounted = true;
 
     const initAuthSession = async () => {
-      if (isSupabaseConfigured && supabase) {
+      if (isSupabaseConfigured() && supabase) {
         try {
           const { data: { session }, error } = await supabase.auth.getSession();
           if (error) {
@@ -73,7 +73,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuthSession();
 
     // Subscribe to auth state changes (Token refresh, sign-in, sign-out)
-    if (isSupabaseConfigured && supabase) {
+    if (isSupabaseConfigured() && supabase) {
       const client = supabase;
       const { data: { subscription } } = client.auth.onAuthStateChange(async (event, session) => {
         if (event === 'SIGNED_OUT' || !session) {
@@ -115,7 +115,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const sanitizedEmail = email.trim().toLowerCase();
 
     try {
-      if (isSupabaseConfigured && supabase) {
+      if (isSupabaseConfigured() && supabase) {
         const { data, error } = await supabase.auth.signInWithPassword({
           email: sanitizedEmail,
           password: pass,
@@ -182,7 +182,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (user) {
       storage.logAction('USER_LOGOUT', 'auth', `User ${user.name} logged out`, user.id);
     }
-    if (isSupabaseConfigured && supabase) {
+    if (isSupabaseConfigured() && supabase) {
       await supabase.auth.signOut();
     }
     setUser(null);
@@ -192,7 +192,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Request password reset email
   const resetPassword = async (email: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      if (isSupabaseConfigured && supabase) {
+      if (isSupabaseConfigured() && supabase) {
         const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
           redirectTo: window.location.origin + '/reset-password',
         });
@@ -209,7 +209,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Change password for logged in user
   const changePassword = async (newPass: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      if (isSupabaseConfigured && supabase) {
+      if (isSupabaseConfigured() && supabase) {
         const { error } = await supabase.auth.updateUser({ password: newPass });
         if (error) {
           return { success: false, error: error.message };
@@ -232,7 +232,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     storage.saveProfile(updated);
     storage.setActiveUser(updated);
 
-    if (isSupabaseConfigured && supabase) {
+    if (isSupabaseConfigured() && supabase) {
       await supabase
         .from('profiles')
         .update({

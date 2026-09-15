@@ -12,7 +12,8 @@ import {
   FileSpreadsheet,
   CheckCircle2,
   XCircle,
-  Clock
+  Clock,
+  Layers
 } from 'lucide-react';
 import { reportService } from '../services/reportService';
 import { Button } from '../components/common/Button';
@@ -23,6 +24,7 @@ export const AttendancePage: React.FC = () => {
 
   const attendanceRecords = storage.getAttendance();
   const members = storage.getMembers();
+  const services = storage.getServices();
   const groups = storage.getGroups();
   const isAr = language === 'ar';
 
@@ -111,43 +113,54 @@ export const AttendancePage: React.FC = () => {
                 <tr>
                   <th className="p-3.5">Date</th>
                   <th className="p-3.5">{t('members.fullName')}</th>
-                  <th className="p-3.5">{t('members.group')}</th>
+                  <th className="p-3.5">{isAr ? 'الخدمة / القطاع' : 'Ministry / Service'}</th>
+                  <th className="p-3.5">{isAr ? 'نوع الجلسة' : 'Session'}</th>
                   <th className="p-3.5">Status</th>
                   <th className="p-3.5">Method</th>
                   <th className="p-3.5">Notes</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {attendanceRecords.map((rec) => {
-                  const member = members.find(m => m.id === rec.member_id);
-                  const group = groups.find(g => g.id === rec.group_id);
+                {attendanceRecords.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-8 text-center text-slate-400 font-semibold">
+                      {isAr ? 'لا توجد سجلات حضور مسجلة حتى الآن' : 'No attendance records logged yet'}
+                    </td>
+                  </tr>
+                ) : (
+                  attendanceRecords.map((rec) => {
+                    const member = members.find(m => m.id === rec.member_id);
+                    const srv = services.find(s => s.id === rec.service_id);
+                    const srvName = srv ? (isAr ? srv.name_ar || srv.name : srv.name) : (rec.service_id || 'General');
 
-                  return (
-                    <tr key={rec.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                      <td className="p-3.5 font-bold text-slate-700 dark:text-slate-300 font-mono">{rec.date}</td>
-                      <td className="p-3.5 font-bold text-slate-900 dark:text-white">
-                        {member ? (isAr ? member.arabic_name : member.full_name) : rec.member_id}
-                      </td>
-                      <td className="p-3.5">
-                        {group ? (
-                          <Badge variant="primary" size="sm">
-                            {isAr ? group.name_ar : group.name}
+                    return (
+                      <tr key={rec.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                        <td className="p-3.5 font-bold text-slate-700 dark:text-slate-300 font-mono">{rec.date}</td>
+                        <td className="p-3.5 font-bold text-slate-900 dark:text-white">
+                          {member ? (isAr ? member.arabic_name : member.full_name) : rec.member_id}
+                        </td>
+                        <td className="p-3.5">
+                          <span className="font-semibold text-primary-600 dark:text-primary-400">
+                            {srvName}
+                          </span>
+                        </td>
+                        <td className="p-3.5 text-slate-600 dark:text-slate-300 font-medium">
+                          {rec.session_name || 'Regular Meeting'}
+                        </td>
+                        <td className="p-3.5">
+                          <Badge
+                            variant={rec.status === 'present' ? 'success' : rec.status === 'absent' ? 'danger' : 'warning'}
+                            size="sm"
+                          >
+                            {rec.status.toUpperCase()}
                           </Badge>
-                        ) : 'N/A'}
-                      </td>
-                      <td className="p-3.5">
-                        <Badge
-                          variant={rec.status === 'present' ? 'success' : rec.status === 'absent' ? 'danger' : 'warning'}
-                          size="sm"
-                        >
-                          {rec.status.toUpperCase()}
-                        </Badge>
-                      </td>
-                      <td className="p-3.5 text-slate-500 capitalize">{rec.method}</td>
-                      <td className="p-3.5 text-slate-400">{rec.notes || '—'}</td>
-                    </tr>
-                  );
-                })}
+                        </td>
+                        <td className="p-3.5 text-slate-500 capitalize">{rec.method}</td>
+                        <td className="p-3.5 text-slate-400">{rec.notes || '—'}</td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>

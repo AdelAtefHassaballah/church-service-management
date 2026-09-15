@@ -3,6 +3,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import { useAuth } from '../../context/AuthContext';
 import { UserProfile, Role, UserStatus } from '../../types';
 import { serviceService } from '../../services/serviceService';
+import { userService } from '../../services/userService';
 import { Button } from '../common/Button';
 import { 
   X, 
@@ -11,8 +12,12 @@ import {
   ShieldCheck, 
   Phone, 
   Mail, 
+  KeyRound,
+  Send,
+  Lock,
   Layers, 
   CheckCircle2, 
+  AlertCircle,
   UserX 
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -33,6 +38,7 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
   const { t, language } = useLanguage();
   const { role: currentRole } = useAuth();
   const services = serviceService.getAll();
+  const isAr = language === 'ar';
 
   if (!isOpen || !user) return null;
 
@@ -47,6 +53,12 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
   const [status, setStatus] = useState<UserStatus>(user.status);
   const [selectedServices, setSelectedServices] = useState<string[]>(user.service_ids || []);
 
+  // Admin Auth states
+  const [newPassword, setNewPassword] = useState('');
+  const [resetMessage, setResetMessage] = useState<{ text: string; isError?: boolean } | null>(null);
+  const [isSendingReset, setIsSendingReset] = useState(false);
+  const [isSettingPassword, setIsSettingPassword] = useState(false);
+
   const toggleService = (srvId: string) => {
     if (selectedServices.includes(srvId)) {
       setSelectedServices(selectedServices.filter(id => id !== srvId));
@@ -55,7 +67,39 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSendResetEmail = async () => {
+    setIsSendingReset(true);
+    setResetMessage(null);
+    try {
+      const res = await userService.sendPasswordResetEmail(email);
+      setResetMessage({ text: res.message || 'Reset link sent!', isError: !res.success });
+    } catch (err: any) {
+      setResetMessage({ text: err.message || 'Failed to send reset link', isError: true });
+    } finally {
+      setIsSendingReset(false);
+    }
+  };
+
+  const handleAdminResetPassword = async () => {
+    if (!newPassword || newPassword.length < 8) {
+      setResetMessage({ text: isAr ? 'يجب أن تتكون كلمة المرور من ٨ أحرف على الأقل' : 'Password must be at least 8 characters', isError: true });
+      return;
+    }
+
+    setIsSettingPassword(true);
+    setResetMessage(null);
+    try {
+      const res = await userService.adminResetPassword(user.id, newPassword);
+      setResetMessage({ text: res.message || 'Password updated successfully!', isError: !res.success });
+      if (res.success) setNewPassword('');
+    } catch (err: any) {
+      setResetMessage({ text: err.message || 'Failed to update password', isError: true });
+    } finally {
+      setIsSettingPassword(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const updated: UserProfile = {
       ...user,
@@ -71,6 +115,8 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
       service_ids: selectedServices,
       updated_at: new Date().toISOString(),
     };
+
+    await userService.updateUser(user.id, updated);
     onSave(updated);
     confetti({ particleCount: 30, spread: 50 });
     onClose();
@@ -105,11 +151,22 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
           </button>
         </div>
 
+        {resetMessage && (
+          <div className={`p-3 rounded-2xl text-xs font-semibold flex items-center gap-2 ${
+            resetMessage.isError
+              ? 'bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300'
+              : 'bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-900 text-emerald-700 dark:text-emerald-300'
+          }`}>
+            {resetMessage.isError ? <AlertCircle className="w-4 h-4 shrink-0" /> : <CheckCircle2 className="w-4 h-4 shrink-0" />}
+            <span>{resetMessage.text}</span>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                {t('members.fullName')}
+                {t('members.fullName')} *
               </label>
               <input
                 type="text"
@@ -135,7 +192,7 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
 
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                {t('auth.email')}
+                {t('auth.email')} *
               </label>
               <input
                 type="email"
@@ -145,6 +202,29 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                 disabled={!isSuperAdmin}
                 className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 font-mono disabled:opacity-60"
               />
+              {isSuperAdmin && (
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  {isAr ? 'تغيير البريد الإلكتروني يحدث بيانات تسجيل الدخول مباشرة.' : 'Changing email modifies login credentials immediately.'}
+                </span>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                {t('users.roleCol')} *
+              </label>
+              <select
+                value={role}
+                onChange={e => setRole(e.target.value as Role)}
+                disabled={!isSuperAdmin}
+                className="w-full px-3.5 py-2.5 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-60"
+              >
+                <option value="super_admin">{t('roles.super_admin')}</option>
+                <option value="admin">{t('roles.admin')}</option>
+                <option value="leader">{t('roles.leader')}</option>
+                <option value="servant">{t('roles.servant')}</option>
+                <option value="member">{t('roles.member')}</option>
+              </select>
             </div>
 
             <div>
@@ -172,25 +252,52 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                 dir="ltr"
               />
             </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                {t('users.roleCol')}
-              </label>
-              <select
-                value={role}
-                onChange={e => setRole(e.target.value as Role)}
-                disabled={!isSuperAdmin}
-                className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-60"
-              >
-                <option value="super_admin">{t('roles.super_admin')}</option>
-                <option value="admin">{t('roles.admin')}</option>
-                <option value="leader">{t('roles.leader')}</option>
-                <option value="servant">{t('roles.servant')}</option>
-                <option value="member">{t('roles.member')}</option>
-              </select>
-            </div>
           </div>
+
+          {/* Super Admin Password Management Section */}
+          {isSuperAdmin && (
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 space-y-3">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
+                <KeyRound className="w-4 h-4 text-primary-600 dark:text-primary-400" />
+                <span>{isAr ? 'إدارة كلمة المرور وحساب المستخدم (Super Admin)' : 'Password & Authentication Management (Super Admin)'}</span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSendResetEmail}
+                  isLoading={isSendingReset}
+                  icon={<Send className="w-3.5 h-3.5 text-primary-600" />}
+                >
+                  {isAr ? 'إرسال رابط إعادة تعيين كلمة المرور' : 'Send Password Reset Link'}
+                </Button>
+
+                <span className="text-xs text-slate-400 self-center">{isAr ? 'أو' : 'or'}</span>
+
+                <div className="flex items-center gap-2 flex-1">
+                  <input
+                    type="password"
+                    placeholder={isAr ? 'تعيين كلمة مرور جديدة مباشرة (٨ أحرف min)' : 'New password (min 8 chars)'}
+                    value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)}
+                    className="flex-1 px-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none font-mono"
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleAdminResetPassword}
+                    isLoading={isSettingPassword}
+                    icon={<Lock className="w-3.5 h-3.5" />}
+                  >
+                    {isAr ? 'تحديث' : 'Set'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Service Assignments */}
           <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
@@ -212,7 +319,7 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                     }`}
                   >
                     <span className="text-xs truncate">
-                      {language === 'ar' ? srv.name_ar : srv.name}
+                      {isAr ? (srv.name_ar || srv.name) : srv.name}
                     </span>
                     <span className={`w-3 h-3 rounded-full border ${isSelected ? 'bg-primary-600 border-primary-600' : 'border-slate-300'}`} />
                   </button>
@@ -222,12 +329,12 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
           </div>
 
           {/* Account Status Toggle */}
-          <div className="pt-2">
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
               {t('users.statusCol')}
             </label>
             <div className="flex gap-4">
-              <label className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
                 <input
                   type="radio"
                   name="edit-status"
@@ -236,9 +343,9 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                   onChange={() => setStatus('active')}
                   className="text-primary-600 focus:ring-primary-500"
                 />
-                <span>{t('users.active')}</span>
+                <span className="text-emerald-600">{t('users.active')}</span>
               </label>
-              <label className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
                 <input
                   type="radio"
                   name="edit-status"
@@ -247,9 +354,9 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                   onChange={() => setStatus('disabled')}
                   className="text-primary-600 focus:ring-primary-500"
                 />
-                <span className="text-rose-600 dark:text-rose-400">{t('users.disabled')}</span>
+                <span className="text-rose-600">{t('users.disabled')}</span>
               </label>
-              <label className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
                 <input
                   type="radio"
                   name="edit-status"
@@ -258,7 +365,7 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({
                   onChange={() => setStatus('pending')}
                   className="text-primary-600 focus:ring-primary-500"
                 />
-                <span>{t('users.pending')}</span>
+                <span className="text-amber-600">{t('users.pending')}</span>
               </label>
             </div>
           </div>

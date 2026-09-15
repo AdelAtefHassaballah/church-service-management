@@ -17,7 +17,8 @@ import {
   Plus, 
   CheckCircle2, 
   XCircle, 
-  Clock 
+  Clock,
+  Layers
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -43,6 +44,8 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
   const [newNote, setNewNote] = useState('');
   const [noteVisibility, setNoteVisibility] = useState<any>('all_leaders_servants');
   const isAr = language === 'ar';
+
+  const services = storage.getServices();
 
   if (!member) return null;
 
@@ -194,7 +197,7 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
 
               <div className="space-y-2.5 p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800">
                 <h4 className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-[10px] text-slate-400">
-                  {isAr ? 'البيانات الكنسية والشخصية' : 'Church & Spiritual Information'}
+                  {isAr ? 'البيانات الكنسية والخدمات' : 'Church & Ministry Information'}
                 </h4>
                 <div className="flex justify-between py-1 border-b border-slate-100 dark:border-slate-800">
                   <span className="text-slate-400">{t('members.confessionFather')}</span>
@@ -248,35 +251,51 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
               </div>
             </div>
 
-            <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-60 overflow-y-auto">
-              {attendanceHistory.map((rec) => (
-                <div key={rec.id} className="py-2.5 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    {rec.status === 'present' ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                    ) : rec.status === 'absent' ? (
-                      <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
-                    ) : (
-                      <Clock className="w-4 h-4 text-amber-500 shrink-0" />
-                    )}
-                    <div>
-                      <p className="font-bold text-slate-800 dark:text-slate-200">{rec.date}</p>
-                      <p className="text-[10px] text-slate-400 capitalize">via {rec.method}</p>
-                    </div>
-                  </div>
+            {attendanceHistory.length === 0 ? (
+              <p className="text-center text-xs text-slate-400 py-8">
+                {isAr ? 'لا توجد سجلات حضور مسجلة لهذا المخدوم حتى الآن' : 'No attendance records logged for this member yet.'}
+              </p>
+            ) : (
+              <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-60 overflow-y-auto">
+                {attendanceHistory.map((rec) => {
+                  const srv = services.find(s => s.id === rec.service_id);
+                  const srvName = srv ? (isAr ? srv.name_ar || srv.name : srv.name) : (rec.service_id || 'General');
 
-                  <div className="text-right">
-                    <Badge
-                      variant={rec.status === 'present' ? 'success' : rec.status === 'absent' ? 'danger' : 'warning'}
-                      size="sm"
-                    >
-                      {rec.status.toUpperCase()}
-                    </Badge>
-                    {rec.notes && <p className="text-[10px] text-slate-400 mt-0.5">{rec.notes}</p>}
-                  </div>
-                </div>
-              ))}
-            </div>
+                  return (
+                    <div key={rec.id} className="py-2.5 flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        {rec.status === 'present' ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                        ) : rec.status === 'absent' ? (
+                          <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                        ) : (
+                          <Clock className="w-4 h-4 text-amber-500 shrink-0" />
+                        )}
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-slate-800 dark:text-slate-200">{rec.date}</span>
+                            <span className="text-[10px] text-primary-600 dark:text-primary-400 font-semibold">({srvName})</span>
+                          </div>
+                          <p className="text-[10px] text-slate-400 capitalize">
+                            {rec.session_name || 'Regular Meeting'} • via {rec.method}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <Badge
+                          variant={rec.status === 'present' ? 'success' : rec.status === 'absent' ? 'danger' : 'warning'}
+                          size="sm"
+                        >
+                          {rec.status.toUpperCase()}
+                        </Badge>
+                        {rec.notes && <p className="text-[10px] text-slate-400 mt-0.5">{rec.notes}</p>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -313,14 +332,6 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
                 </Button>
               </div>
             </form>
-
-            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 text-xs">
-              <p className="font-bold text-slate-700 dark:text-slate-300">Previous Note (Sep 10, 2026):</p>
-              <p className="text-slate-600 dark:text-slate-400 mt-1">
-                "Spoke with parents regarding upcoming sports championship and exam preparation. Member is enthusiastic and requested prayers."
-              </p>
-              <p className="text-[10px] text-slate-400 mt-1">Recorded by: Kirollos Emil (Servant)</p>
-            </div>
           </div>
         )}
 

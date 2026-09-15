@@ -15,7 +15,9 @@ import {
   Download, 
   MessageSquare, 
   CheckCircle2,
-  Sparkles
+  Sparkles,
+  ExternalLink,
+  Image as ImageIcon
 } from 'lucide-react';
 
 interface LessonDetailModalProps {
@@ -36,18 +38,24 @@ export const LessonDetailModal: React.FC<LessonDetailModalProps> = ({
 
   const [feedback, setFeedback] = useState(lesson?.leader_feedback || '');
   const [feedbackSaved, setFeedbackSaved] = useState(false);
+  const [selectedImagePreview, setSelectedImagePreview] = useState<string | null>(null);
   const isAr = language === 'ar';
 
   if (!lesson) return null;
 
   const servant = servants.find(s => s.id === lesson.servant_id);
   const group = groups.find(g => g.id === lesson.group_id);
+  const canGiveFeedback = role === 'super_admin' || role === 'admin' || role === 'leader';
 
-  const handleSaveFeedback = (e: React.FormEvent) => {
+  const handleSaveFeedback = async (e: React.FormEvent) => {
     e.preventDefault();
-    lessonService.addFeedback(lesson.id, feedback);
+    await lessonService.addFeedback(lesson.id, feedback);
     setFeedbackSaved(true);
-    setTimeout(() => setFeedbackSaved(false), 2000);
+    setTimeout(() => setFeedbackSaved(false), 2500);
+  };
+
+  const isImageAttachment = (att: any) => {
+    return att.type?.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif)$/i.test(att.name);
   };
 
   return (
@@ -60,7 +68,7 @@ export const LessonDetailModal: React.FC<LessonDetailModalProps> = ({
           <span>{lesson.title}</span>
         </div>
       }
-      subtitle={`${servant ? (isAr ? servant.name_ar : servant.name) : 'Servant'} • ${lesson.lesson_date}`}
+      subtitle={`${servant ? (isAr ? servant.name_ar || servant.name : servant.name) : 'Servant'} • ${lesson.lesson_date}`}
       maxWidth="2xl"
     >
       <div className="space-y-4">
@@ -104,11 +112,11 @@ export const LessonDetailModal: React.FC<LessonDetailModalProps> = ({
             {t('lessons.description')}
           </h4>
           <p className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-line leading-relaxed p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800">
-            {lesson.description || 'No additional notes provided.'}
+            {lesson.description || (isAr ? 'لا توجد ملاحظات إضافية.' : 'No additional notes provided.')}
           </p>
         </div>
 
-        {/* Attachments list */}
+        {/* Attachments list with image preview */}
         {lesson.attachments && lesson.attachments.length > 0 && (
           <div>
             <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-1.5">
@@ -116,21 +124,64 @@ export const LessonDetailModal: React.FC<LessonDetailModalProps> = ({
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {lesson.attachments.map(att => (
-                <a
+                <div
                   key={att.id}
-                  href={att.url}
-                  target="_blank"
-                  rel="noreferrer"
                   className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-primary-500 transition-colors flex items-center justify-between group"
                 >
                   <div className="flex items-center gap-2 truncate">
-                    <FileText className="w-4 h-4 text-primary-600 shrink-0" />
+                    {isImageAttachment(att) ? (
+                      <ImageIcon className="w-4 h-4 text-emerald-600 shrink-0" />
+                    ) : (
+                      <FileText className="w-4 h-4 text-primary-600 shrink-0" />
+                    )}
                     <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">{att.name}</span>
                   </div>
-                  <Download className="w-4 h-4 text-slate-400 group-hover:text-primary-600 shrink-0" />
-                </a>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {isImageAttachment(att) && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedImagePreview(att.url)}
+                        className="p-1 rounded text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors"
+                        title="Preview"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <a
+                      href={att.url}
+                      download={att.name}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="p-1 rounded text-slate-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/40 transition-colors"
+                      title="Download"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Image preview modal inside */}
+        {selectedImagePreview && (
+          <div className="p-3 rounded-2xl bg-slate-900/90 border border-slate-700 space-y-2">
+            <div className="flex items-center justify-between text-xs text-white">
+              <span className="font-semibold">{isAr ? 'معاينة الصورة' : 'Image Preview'}</span>
+              <button
+                type="button"
+                onClick={() => setSelectedImagePreview(null)}
+                className="text-slate-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+            <img
+              src={selectedImagePreview}
+              alt="Lesson preview"
+              className="max-h-72 w-auto mx-auto rounded-xl object-contain border border-slate-700"
+            />
           </div>
         )}
 
@@ -140,7 +191,7 @@ export const LessonDetailModal: React.FC<LessonDetailModalProps> = ({
             {t('lessons.leaderFeedback')}
           </h4>
 
-          {role === 'admin' || role === 'leader' ? (
+          {canGiveFeedback ? (
             <form onSubmit={handleSaveFeedback} className="space-y-2">
               <textarea
                 rows={2}
@@ -149,10 +200,18 @@ export const LessonDetailModal: React.FC<LessonDetailModalProps> = ({
                 placeholder={isAr ? 'اكتب ملاحظاتك وتوجيهاتك للخادم لتشجيعه وتطوير تقديم الدرس...' : 'Provide constructive feedback for the servant...'}
                 className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-primary-500 focus:outline-none"
               />
-              <div className="flex justify-end">
-                <Button variant="secondary" size="sm" type="submit">
-                  {feedbackSaved ? t('common.success') : t('common.save')}
-                </Button>
+              <div className="flex items-center justify-between">
+                {feedbackSaved && (
+                  <span className="text-xs font-semibold text-emerald-600 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>{isAr ? 'تم حفظ التوجيهات بنجاح!' : 'Feedback saved successfully!'}</span>
+                  </span>
+                )}
+                <div className="ml-auto">
+                  <Button variant="secondary" size="sm" type="submit">
+                    {t('common.save')}
+                  </Button>
+                </div>
               </div>
             </form>
           ) : (
