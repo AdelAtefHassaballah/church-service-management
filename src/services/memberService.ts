@@ -92,6 +92,7 @@ export const memberService = {
     const newMember: Member = {
       ...memberData,
       id: randomId,
+      service_ids: memberData.service_ids || [],
       qr_code: `KHEDMA-${randomId.toUpperCase()}`,
       created_at: new Date().toISOString(),
     };
@@ -140,6 +141,7 @@ export const memberService = {
     const updated: Member = {
       ...existing,
       ...updates,
+      service_ids: updates.service_ids || existing.service_ids || [],
       updated_at: new Date().toISOString(),
     };
     storage.saveMember(updated);

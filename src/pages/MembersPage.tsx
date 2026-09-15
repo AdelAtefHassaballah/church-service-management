@@ -45,7 +45,7 @@ export const MembersPage: React.FC = () => {
   const [whatsAppMember, setWhatsAppMember] = useState<Member | null>(null);
 
   const isAr = language === 'ar';
-  const canEdit = role === 'admin' || role === 'leader';
+  const canEdit = role === 'super_admin' || role === 'admin' || role === 'leader';
 
   const refreshMembers = () => {
     setMembers(storage.getMembers());

@@ -163,6 +163,7 @@ export const serviceService = {
     const profiles = storage.getProfiles();
     for (const p of profiles) {
       if (servantIds.includes(p.id)) {
+        p.service_ids = p.service_ids || [];
         if (!p.service_ids.includes(serviceId)) {
           p.service_ids.push(serviceId);
           storage.saveProfile(p);
@@ -186,9 +187,12 @@ export const serviceService = {
       storage.saveService(service);
     }
     const profile = storage.getProfileById(servantId);
-    if (profile && !profile.service_ids.includes(serviceId)) {
-      profile.service_ids.push(serviceId);
-      storage.saveProfile(profile);
+    if (profile) {
+      profile.service_ids = profile.service_ids || [];
+      if (!profile.service_ids.includes(serviceId)) {
+        profile.service_ids.push(serviceId);
+        storage.saveProfile(profile);
+      }
     }
   },
 
@@ -200,7 +204,7 @@ export const serviceService = {
 
     const profile = storage.getProfileById(servantId);
     if (profile) {
-      profile.service_ids = profile.service_ids.filter(id => id !== serviceId);
+      profile.service_ids = (profile.service_ids || []).filter(id => id !== serviceId);
       storage.saveProfile(profile);
     }
   },
@@ -215,6 +219,7 @@ export const serviceService = {
     const members = storage.getMembers();
     for (const m of members) {
       if (memberIds.includes(m.id)) {
+        m.service_ids = m.service_ids || [];
         if (!m.service_ids.includes(serviceId)) {
           m.service_ids.push(serviceId);
           storage.saveMember(m);
@@ -238,9 +243,12 @@ export const serviceService = {
       storage.saveService(service);
     }
     const member = storage.getMemberById(memberId);
-    if (member && !member.service_ids.includes(serviceId)) {
-      member.service_ids.push(serviceId);
-      storage.saveMember(member);
+    if (member) {
+      member.service_ids = member.service_ids || [];
+      if (!member.service_ids.includes(serviceId)) {
+        member.service_ids.push(serviceId);
+        storage.saveMember(member);
+      }
     }
   },
 
@@ -252,7 +260,7 @@ export const serviceService = {
 
     const member = storage.getMemberById(memberId);
     if (member) {
-      member.service_ids = member.service_ids.filter(id => id !== serviceId);
+      member.service_ids = (member.service_ids || []).filter(id => id !== serviceId);
       storage.saveMember(member);
     }
   },
@@ -273,6 +281,7 @@ export const serviceService = {
     if (!member) return;
 
     member.assigned_servant_id = servantId;
+    member.service_ids = member.service_ids || [];
     if (!member.service_ids.includes(serviceId)) {
       member.service_ids.push(serviceId);
     }
@@ -306,8 +315,8 @@ export const serviceService = {
     const allTasks = storage.getTasks().filter(t => t.service_id === serviceId || (!t.service_id && serviceId === 'srv-prep'));
     const allEvents = storage.getEvents().filter(e => e.service_id === serviceId || (!e.service_id && serviceId === 'srv-prep'));
 
-    const serviceMembers = allMembers.filter(m => service?.member_ids.includes(m.id) || m.service_ids.includes(serviceId));
-    const serviceServants = allServants.filter(s => service?.servant_ids.includes(s.id) || s.service_ids.includes(serviceId));
+    const serviceMembers = allMembers.filter(m => service?.member_ids.includes(m.id) || (m.service_ids || []).includes(serviceId));
+    const serviceServants = allServants.filter(s => service?.servant_ids.includes(s.id) || (s.service_ids || []).includes(serviceId));
 
     const presentAttendance = allAttendance.filter(a => a.status === 'present');
     const attendanceRate = allAttendance.length > 0 ? Math.round((presentAttendance.length / allAttendance.length) * 100) : 85;
