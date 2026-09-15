@@ -76,7 +76,7 @@ const createServant = async (data: {
   };
 
   if (isSupabaseConfigured() && supabase) {
-    // 1. Try atomic admin_create_user RPC (provisions auth.users + public.profiles together)
+    // Atomic admin_create_user RPC (provisions auth.users + public.profiles together)
     const { data: rpcData, error: rpcError } = await supabase.rpc('admin_create_user', {
       p_email: newProfile.email,
       p_name: newProfile.name,
@@ -94,7 +94,12 @@ const createServant = async (data: {
       p_status: newProfile.status || 'active',
     });
 
-    if (!rpcError && rpcData) {
+    if (rpcError) {
+      console.error('Supabase admin_create_user RPC error:', rpcError);
+      throw new Error(rpcError.message || 'Failed to create servant in database.');
+    }
+
+    if (rpcData) {
       const saved: UserProfile = {
         ...newProfile,
         ...rpcData,
@@ -110,82 +115,9 @@ const createServant = async (data: {
       );
       return saved;
     }
-
-    // 2. Direct insert fallback
-    console.warn('RPC admin_create_user note:', rpcError?.message);
-    const payload = {
-      id: newProfile.id,
-      church_id: churchId,
-      email: newProfile.email,
-      name: newProfile.name,
-      name_ar: newProfile.name_ar,
-      role: newProfile.role,
-      avatar_url: newProfile.avatar_url || null,
-      phone: newProfile.phone,
-      whatsapp: newProfile.whatsapp,
-      address: newProfile.address || null,
-      bio: newProfile.bio || null,
-      gender: newProfile.gender || null,
-      date_of_birth: newProfile.date_of_birth || null,
-      status: newProfile.status,
-      service_ids: newProfile.service_ids,
-      permissions: newProfile.permissions,
-      qr_code: newProfile.qr_code,
-    };
-
-    const { data: dbProfile, error: insertError } = await supabase
-      .from('profiles')
-      .insert(payload)
-      .select()
-      .single();
-
-    if (insertError) {
-      console.error('Supabase profile insert error:', insertError);
-      throw new Error(rpcError?.message || insertError.message || 'Failed to save servant to database.');
-    }
-
-    if (dbProfile) {
-      const saved = { ...newProfile, ...dbProfile };
-      storage.saveProfile(saved);
-
-      // Save relational records if applicable
-      for (const srvId of data.service_ids) {
-        if (isUUID(srvId)) {
-          try {
-            await supabase.from('service_servants').upsert({
-              service_id: srvId,
-              servant_id: saved.id
-            });
-          } catch (e: any) {
-            console.warn('service_servants link note:', e);
-          }
-        }
-      }
-
-      try {
-        await supabase.from('qr_codes').upsert({
-          entity_type: 'servant',
-          entity_id: saved.id,
-          token: saved.qr_code,
-          status: 'active',
-          service_ids: saved.service_ids,
-        });
-      } catch (e: any) {
-        console.warn('qr_codes link note:', e);
-      }
-
-      storage.logAction(
-        'SERVANT_CREATED',
-        'user',
-        `Created servant profile for ${saved.name} (${saved.name_ar}) in Supabase`,
-        saved.id
-      );
-
-      return saved;
-    }
   }
 
-  // Fallback for offline/local storage mode
+  // Fallback for offline/local storage mode only when Supabase is not configured
   storage.saveProfile(newProfile);
   storage.logAction(
     'SERVANT_CREATED',

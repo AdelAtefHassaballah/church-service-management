@@ -730,15 +730,31 @@ DECLARE
     default_pass TEXT := 'Servant' || floor(random() * 900000 + 100000)::text || '!';
     encrypted_pass TEXT;
     created_profile RECORD;
+    srv_id_text TEXT;
 BEGIN
-    IF NOT (public.is_super_admin() OR public.has_permission('users.create')) THEN
+    -- 1. Authorization Check: Super Admin, Admin, or user with users.create permission
+    IF NOT (
+        public.is_super_admin() 
+        OR public.has_permission('users.create')
+        OR EXISTS (
+            SELECT 1 FROM public.profiles 
+            WHERE id = auth.uid() 
+              AND role IN ('super_admin', 'admin', 'leader') 
+              AND status = 'active'
+        )
+    ) THEN
         RAISE EXCEPTION 'Access denied. You do not have permission to create users.';
     END IF;
 
-    -- Generate bcrypt password
+    -- 2. Duplicate Email Check
+    IF EXISTS (SELECT 1 FROM auth.users WHERE email = LOWER(TRIM(p_email))) THEN
+        RAISE EXCEPTION 'A user with email "%" already exists in authentication system.', LOWER(TRIM(p_email));
+    END IF;
+
+    -- 3. Generate secure bcrypt password hash
     encrypted_pass := crypt(default_pass, gen_salt('bf'));
 
-    -- 1. Create auth.users row
+    -- 4. Create auth.users row
     INSERT INTO auth.users (
         id,
         instance_id,
@@ -766,7 +782,7 @@ BEGIN
         'authenticated'
     );
 
-    -- 2. Upsert public.profiles row
+    -- 5. Upsert public.profiles row
     INSERT INTO public.profiles (
         id,
         email,
@@ -817,7 +833,7 @@ BEGIN
         updated_at = NOW()
     RETURNING * INTO created_profile;
 
-    -- 3. Create QR code record
+    -- 6. Create QR code record
     INSERT INTO public.qr_codes (
         entity_type,
         entity_id,
@@ -836,7 +852,22 @@ BEGIN
     )
     ON CONFLICT (token) DO NOTHING;
 
-    -- 4. Log action
+    -- 7. Populate service_servants relation table if service UUIDs provided
+    IF p_service_ids IS NOT NULL THEN
+        FOREACH srv_id_text IN ARRAY p_service_ids LOOP
+            BEGIN
+                IF srv_id_text ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' THEN
+                    INSERT INTO public.service_servants (service_id, servant_id)
+                    VALUES (srv_id_text::UUID, new_user_id)
+                    ON CONFLICT DO NOTHING;
+                END IF;
+            EXCEPTION WHEN OTHERS THEN
+                NULL;
+            END;
+        END LOOP;
+    END IF;
+
+    -- 8. Log audit trail
     INSERT INTO public.audit_logs (user_id, user_name, action, entity_type, entity_id, details)
     VALUES (
         auth.uid(),
