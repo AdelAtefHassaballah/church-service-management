@@ -4,14 +4,15 @@ import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
 import { useLanguage } from '../../context/LanguageContext';
 import { storage } from '../../lib/storage';
-import { UserPlus, Save, User } from 'lucide-react';
-
-import { DEFAULT_CHURCH_ID } from '../../lib/uuid';
+import { serviceService } from '../../services/serviceService';
+import { UserPlus, Save, AlertCircle } from 'lucide-react';
+import confetti from 'canvas-confetti';
+import { DEFAULT_CHURCH_ID, sanitizeUUID } from '../../lib/uuid';
 
 interface AddEditMemberModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (memberData: any) => void;
+  onSave: (memberData: any) => Promise<void>;
   member?: Member | null;
 }
 
@@ -22,8 +23,9 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
   member,
 }) => {
   const { t, language } = useLanguage();
+  const services = serviceService.getAll();
   const groups = storage.getGroups();
-  const servants = storage.getProfiles().filter(p => p.role === 'servant');
+  const servants = storage.getProfiles().filter(p => p.role === 'servant' || p.role === 'leader');
 
   const [formData, setFormData] = useState({
     full_name: '',
@@ -37,14 +39,19 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
     address: '',
     emergency_contact_name: '',
     emergency_contact_phone: '',
-    group_id: groups[0]?.id || '',
-    assigned_servant_id: servants[0]?.id || '',
+    service_ids: [] as string[],
+    group_id: '',
+    assigned_servant_id: '',
     confession_father: 'Fr. Mina Gerges',
     status: 'active' as MemberStatus,
     notes: '',
   });
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
+    setError(null);
     if (member) {
       setFormData({
         full_name: member.full_name || '',
@@ -58,8 +65,9 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
         address: member.address || '',
         emergency_contact_name: member.emergency_contact_name || '',
         emergency_contact_phone: member.emergency_contact_phone || '',
+        service_ids: member.service_ids && member.service_ids.length > 0 ? member.service_ids : (services[0]?.id ? [services[0].id] : []),
         group_id: member.group_id || groups[0]?.id || '',
-        assigned_servant_id: member.assigned_servant_id || servants[0]?.id || '',
+        assigned_servant_id: member.assigned_servant_id || '',
         confession_father: member.confession_father || 'Fr. Mina Gerges',
         status: member.status || 'active',
         notes: member.notes || '',
@@ -71,12 +79,13 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
         photo_url: '',
         date_of_birth: '2012-01-01',
         gender: 'male',
-        phone: '+20120',
-        whatsapp: '+20120',
+        phone: '',
+        whatsapp: '',
         email: '',
         address: '',
         emergency_contact_name: '',
         emergency_contact_phone: '',
+        service_ids: services.length > 0 ? [services[0].id] : [],
         group_id: groups[0]?.id || '',
         assigned_servant_id: servants[0]?.id || '',
         confession_father: 'Fr. Mina Gerges',
@@ -86,14 +95,73 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
     }
   }, [member, isOpen]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const toggleService = (srvId: string) => {
+    const current = formData.service_ids || [];
+    if (current.includes(srvId)) {
+      setFormData({ ...formData, service_ids: current.filter(id => id !== srvId) });
+    } else {
+      setFormData({ ...formData, service_ids: [...current, srvId] });
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSave({
-      ...formData,
-      church_id: DEFAULT_CHURCH_ID,
-      join_date: member ? member.join_date : new Date().toISOString().split('T')[0],
-    });
-    onClose();
+    setError(null);
+
+    // Validation
+    const cleanName = formData.full_name.trim();
+    if (!cleanName) {
+      setError(language === 'ar' ? 'يرجى إدخال اسم المخدوم بالإنجليزية' : 'Full name is required');
+      return;
+    }
+
+    const cleanNameAr = formData.arabic_name.trim();
+    if (!cleanNameAr) {
+      setError(language === 'ar' ? 'يرجى إدخال اسم المخدوم باللغة العربية' : 'Arabic name is required');
+      return;
+    }
+
+    const cleanPhone = formData.phone.trim();
+    if (!cleanPhone) {
+      setError(language === 'ar' ? 'يرجى إدخال رقم الهاتف' : 'Phone number is required');
+      return;
+    }
+
+    if (formData.email && formData.email.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(formData.email.trim())) {
+        setError(language === 'ar' ? 'صيغة البريد الإلكتروني غير صحيحة' : 'Invalid email address format');
+        return;
+      }
+    }
+
+    if (!formData.service_ids || formData.service_ids.length === 0) {
+      setError(language === 'ar' ? 'يرجى تحديد الخدمة التابع لها المخدوم' : 'Please select at least one church service');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await onSave({
+        ...formData,
+        full_name: cleanName,
+        arabic_name: cleanNameAr,
+        phone: cleanPhone,
+        whatsapp: formData.whatsapp.trim() || cleanPhone,
+        email: formData.email ? formData.email.trim() : undefined,
+        church_id: DEFAULT_CHURCH_ID,
+        assigned_servant_id: sanitizeUUID(formData.assigned_servant_id) || undefined,
+        join_date: member ? member.join_date : new Date().toISOString().split('T')[0],
+      });
+
+      confetti({ particleCount: 40, spread: 60 });
+      setIsSubmitting(false);
+      onClose();
+    } catch (err: any) {
+      console.error('Save member error:', err);
+      setError(err?.message || 'Failed to save member in database');
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -110,6 +178,13 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
       maxWidth="2xl"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
+        {error && (
+          <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-semibold flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* Full Name (English) */}
           <div>
@@ -137,6 +212,7 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
               value={formData.arabic_name}
               onChange={e => setFormData({ ...formData, arabic_name: e.target.value })}
               placeholder="مثال: عادل جرجس فهمي"
+              dir="rtl"
               className="w-full px-3.5 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-primary-500 focus:outline-none"
             />
           </div>
@@ -173,6 +249,21 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
             />
           </div>
 
+          {/* Email (Optional) */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              {t('auth.email')}
+            </label>
+            <input
+              type="email"
+              value={formData.email}
+              onChange={e => setFormData({ ...formData, email: e.target.value })}
+              placeholder="member@church.org"
+              className="w-full px-3.5 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-primary-500 focus:outline-none font-mono"
+              dir="ltr"
+            />
+          </div>
+
           {/* Service Group */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
@@ -201,6 +292,7 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
               onChange={e => setFormData({ ...formData, assigned_servant_id: e.target.value })}
               className="w-full px-3.5 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-primary-500 focus:outline-none"
             >
+              <option value="">{language === 'ar' ? '-- بدون تعيين خادم افتقاد --' : '-- No Assigned Servant --'}</option>
               {servants.map(s => (
                 <option key={s.id} value={s.id}>
                   {language === 'ar' ? (s.name_ar || s.name) : s.name}
@@ -251,6 +343,19 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
             </div>
           </div>
 
+          {/* Confession Father */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              {t('members.confessionFather')}
+            </label>
+            <input
+              type="text"
+              value={formData.confession_father}
+              onChange={e => setFormData({ ...formData, confession_father: e.target.value })}
+              className="w-full px-3.5 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+            />
+          </div>
+
           {/* Emergency Contact Name */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
@@ -265,17 +370,48 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
             />
           </div>
 
-          {/* Confession Father */}
+          {/* Emergency Contact Phone */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              {t('members.confessionFather')}
+              {t('members.emergencyPhone') || (language === 'ar' ? 'هاتف الطوارئ' : 'Emergency Phone')}
             </label>
             <input
-              type="text"
-              value={formData.confession_father}
-              onChange={e => setFormData({ ...formData, confession_father: e.target.value })}
-              className="w-full px-3.5 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+              type="tel"
+              value={formData.emergency_contact_phone}
+              onChange={e => setFormData({ ...formData, emergency_contact_phone: e.target.value })}
+              placeholder="+201201112233"
+              className="w-full px-3.5 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-primary-500 focus:outline-none font-mono"
+              dir="ltr"
             />
+          </div>
+        </div>
+
+        {/* Church Service Affiliation (Multi-Service) */}
+        <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+            {language === 'ar' ? 'الخدمات الكنسية التابع لها المخدوم' : 'Assigned Church Services'} *
+          </label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {services.map(srv => {
+              const isSelected = (formData.service_ids || []).includes(srv.id);
+              return (
+                <button
+                  key={srv.id}
+                  type="button"
+                  onClick={() => toggleService(srv.id)}
+                  className={`p-2.5 rounded-xl border text-start flex items-center justify-between transition-all ${
+                    isSelected
+                      ? 'bg-primary-50 dark:bg-primary-950/60 border-primary-400 dark:border-primary-600 text-primary-900 dark:text-primary-100 font-bold'
+                      : 'bg-slate-50/60 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  <span className="text-xs truncate">
+                    {language === 'ar' ? srv.name_ar : srv.name}
+                  </span>
+                  <span className={`w-3 h-3 rounded-full border ${isSelected ? 'bg-primary-600 border-primary-600' : 'border-slate-300'}`} />
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -309,10 +445,10 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
 
         {/* Actions */}
         <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100 dark:border-slate-800">
-          <Button variant="ghost" type="button" onClick={onClose}>
+          <Button variant="ghost" type="button" onClick={onClose} disabled={isSubmitting}>
             {t('common.cancel')}
           </Button>
-          <Button variant="primary" type="submit" icon={<Save className="w-4 h-4" />}>
+          <Button variant="primary" type="submit" isLoading={isSubmitting} icon={<Save className="w-4 h-4" />}>
             {member ? t('members.saveMember') : t('members.createMember')}
           </Button>
         </div>

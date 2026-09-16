@@ -51,19 +51,31 @@ export const MembersPage: React.FC = () => {
     setMembers(storage.getMembers());
   };
 
-  const handleSaveMember = (data: any) => {
+  React.useEffect(() => {
+    memberService.fetchAll().then(data => {
+      setMembers(data);
+    });
+  }, []);
+
+  const handleSaveMember = async (data: any) => {
     if (editingMember) {
-      memberService.update(editingMember.id, data);
+      await memberService.update(editingMember.id, data);
     } else {
-      memberService.create(data);
+      await memberService.create(data);
     }
-    refreshMembers();
+    const updatedList = await memberService.fetchAll();
+    setMembers(updatedList);
   };
 
-  const handleDeleteMember = (member: Member) => {
+  const handleDeleteMember = async (member: Member) => {
     if (confirm(t('members.deleteConfirm'))) {
-      memberService.delete(member.id);
-      refreshMembers();
+      try {
+        await memberService.delete(member.id);
+        const updatedList = await memberService.fetchAll();
+        setMembers(updatedList);
+      } catch (err: any) {
+        alert(err?.message || 'Failed to delete member');
+      }
     }
   };
 

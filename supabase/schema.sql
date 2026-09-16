@@ -338,7 +338,7 @@ AS $$
   );
 $$;
 
--- Check if current user has a specific granular permission
+-- -- Check if current user has a specific granular permission
 CREATE OR REPLACE FUNCTION public.has_permission(requested_perm TEXT)
 RETURNS BOOLEAN
 LANGUAGE sql
@@ -349,7 +349,17 @@ AS $$
     SELECT 1 FROM public.profiles
     WHERE id = auth.uid() 
       AND status = 'active'
-      AND (role = 'super_admin' OR requested_perm = ANY(permissions))
+      AND (
+        role IN ('super_admin', 'admin') 
+        OR requested_perm = ANY(permissions)
+        OR (role = 'leader' AND requested_perm IN (
+          'members.view', 'members.create', 'members.edit', 'members.delete',
+          'attendance.view', 'attendance.create', 'attendance.edit',
+          'tasks.view', 'tasks.create', 'tasks.edit',
+          'lessons.view', 'lessons.create',
+          'events.view', 'events.create', 'qr.manage'
+        ))
+      )
   );
 $$;
 
@@ -362,10 +372,10 @@ STABLE
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.profiles
-    WHERE id = auth.uid()
+    WHERE id = auth.uid() 
       AND status = 'active'
       AND (
-        role = 'super_admin'
+        role IN ('super_admin', 'admin')
         OR service_uuid::text = ANY(service_ids)
         OR EXISTS (SELECT 1 FROM public.service_leaders WHERE service_id = service_uuid AND leader_id = auth.uid())
         OR EXISTS (SELECT 1 FROM public.service_servants WHERE service_id = service_uuid AND servant_id = auth.uid())
@@ -423,28 +433,41 @@ CREATE POLICY "Authorized users view services" ON public.services
 
 DROP POLICY IF EXISTS "Permitted users modify services" ON public.services;
 CREATE POLICY "Permitted users modify services" ON public.services
-    FOR ALL USING (public.has_permission('services.edit') OR public.has_permission('services.create'));
+    FOR ALL USING (public.has_permission('services.edit') OR public.has_permission('services.create') OR public.is_super_admin());
 
 -- 3. SERVICE ASSIGNMENTS POLICIES
 DROP POLICY IF EXISTS "Super Admin manage service mappings" ON public.service_servants;
 CREATE POLICY "Super Admin manage service mappings" ON public.service_servants
-    FOR ALL USING (public.is_super_admin());
+    FOR ALL USING (public.is_super_admin() OR public.has_permission('services.edit'));
 
 DROP POLICY IF EXISTS "View service servants" ON public.service_servants;
 CREATE POLICY "View service servants" ON public.service_servants
     FOR SELECT USING (auth.uid() IS NOT NULL);
 
 DROP POLICY IF EXISTS "Super Admin manage service members" ON public.service_members;
-CREATE POLICY "Super Admin manage service members" ON public.service_members
-    FOR ALL USING (public.is_super_admin());
+DROP POLICY IF EXISTS "Authorized users manage service members" ON public.service_members;
+CREATE POLICY "Authorized users manage service members" ON public.service_members
+    FOR ALL USING (
+        public.is_super_admin() 
+        OR public.has_permission('members.create') 
+        OR public.has_permission('members.edit') 
+        OR public.has_permission('services.edit')
+        OR auth.uid() IS NOT NULL
+    );
 
 DROP POLICY IF EXISTS "View service members" ON public.service_members;
 CREATE POLICY "View service members" ON public.service_members
     FOR SELECT USING (auth.uid() IS NOT NULL);
 
 DROP POLICY IF EXISTS "Super Admin manage care assignments" ON public.member_servant_assignments;
-CREATE POLICY "Super Admin manage care assignments" ON public.member_servant_assignments
-    FOR ALL USING (public.is_super_admin());
+DROP POLICY IF EXISTS "Authorized users manage care assignments" ON public.member_servant_assignments;
+CREATE POLICY "Authorized users manage care assignments" ON public.member_servant_assignments
+    FOR ALL USING (
+        public.is_super_admin() 
+        OR public.has_permission('members.create') 
+        OR public.has_permission('members.edit')
+        OR auth.uid() IS NOT NULL
+    );
 
 DROP POLICY IF EXISTS "View care assignments" ON public.member_servant_assignments;
 CREATE POLICY "View care assignments" ON public.member_servant_assignments
@@ -457,19 +480,16 @@ CREATE POLICY "Super Admin manage members" ON public.members
 
 DROP POLICY IF EXISTS "Servants and Leaders view assigned members" ON public.members;
 CREATE POLICY "Servants and Leaders view assigned members" ON public.members
-    FOR SELECT USING (
-        public.has_permission('members.view')
-        OR assigned_servant_id = auth.uid()
-        OR EXISTS (
-            SELECT 1 FROM public.service_servants ss
-            JOIN public.service_members sm ON ss.service_id = sm.service_id
-            WHERE ss.servant_id = auth.uid() AND sm.member_id = members.id
-        )
-    );
+    FOR SELECT USING (auth.uid() IS NOT NULL);
 
 DROP POLICY IF EXISTS "Authorized users modify members" ON public.members;
 CREATE POLICY "Authorized users modify members" ON public.members
-    FOR ALL USING (public.has_permission('members.create') OR public.has_permission('members.edit'));
+    FOR ALL USING (
+        public.is_super_admin() 
+        OR public.has_permission('members.create') 
+        OR public.has_permission('members.edit')
+        OR auth.uid() IS NOT NULL
+    );
 
 -- 5. ATTENDANCE POLICIES
 DROP POLICY IF EXISTS "Super Admin manage attendance" ON public.attendance_records;
@@ -478,15 +498,15 @@ CREATE POLICY "Super Admin manage attendance" ON public.attendance_records
 
 DROP POLICY IF EXISTS "Authorized users view attendance" ON public.attendance_records;
 CREATE POLICY "Authorized users view attendance" ON public.attendance_records
-    FOR SELECT USING (public.has_permission('attendance.view') OR recorded_by = auth.uid());
+    FOR SELECT USING (auth.uid() IS NOT NULL);
 
 DROP POLICY IF EXISTS "Authorized users record attendance" ON public.attendance_records;
 CREATE POLICY "Authorized users record attendance" ON public.attendance_records
-    FOR INSERT WITH CHECK (public.has_permission('attendance.create') OR auth.uid() IS NOT NULL);
+    FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 
 DROP POLICY IF EXISTS "Authorized users update attendance" ON public.attendance_records;
 CREATE POLICY "Authorized users update attendance" ON public.attendance_records
-    FOR UPDATE USING (public.has_permission('attendance.edit'));
+    FOR UPDATE USING (auth.uid() IS NOT NULL);
 
 -- 6. SERVANT ATTENDANCE POLICIES
 DROP POLICY IF EXISTS "Super Admin manage servant attendance" ON public.servant_attendance;
@@ -495,20 +515,25 @@ CREATE POLICY "Super Admin manage servant attendance" ON public.servant_attendan
 
 DROP POLICY IF EXISTS "Leaders and Admins view servant attendance" ON public.servant_attendance;
 CREATE POLICY "Leaders and Admins view servant attendance" ON public.servant_attendance
-    FOR SELECT USING (public.has_permission('attendance.view') OR servant_id = auth.uid());
+    FOR SELECT USING (auth.uid() IS NOT NULL);
 
 DROP POLICY IF EXISTS "Authorized users record servant attendance" ON public.servant_attendance;
 CREATE POLICY "Authorized users record servant attendance" ON public.servant_attendance
-    FOR INSERT WITH CHECK (public.has_permission('attendance.create') OR public.is_super_admin());
+    FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 
 -- 7. QR CODES POLICIES
 DROP POLICY IF EXISTS "Super Admin manage qr codes" ON public.qr_codes;
-CREATE POLICY "Super Admin manage qr codes" ON public.qr_codes
-    FOR ALL USING (public.is_super_admin());
+DROP POLICY IF EXISTS "Authorized users manage qr codes" ON public.qr_codes;
+CREATE POLICY "Authorized users manage qr codes" ON public.qr_codes
+    FOR ALL USING (
+        public.is_super_admin() 
+        OR public.has_permission('qr.manage')
+        OR auth.uid() IS NOT NULL
+    );
 
 DROP POLICY IF EXISTS "View qr codes" ON public.qr_codes;
 CREATE POLICY "View qr codes" ON public.qr_codes
-    FOR SELECT USING (public.has_permission('qr.manage') OR entity_id = auth.uid());
+    FOR SELECT USING (auth.uid() IS NOT NULL);
 
 -- 8. TASKS POLICIES
 DROP POLICY IF EXISTS "Super Admin manage tasks" ON public.tasks;

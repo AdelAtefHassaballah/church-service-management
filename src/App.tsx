@@ -144,8 +144,9 @@ export const App: React.FC = () => {
       <AddEditMemberModal
         isOpen={isAddMemberOpen}
         onClose={() => setIsAddMemberOpen(false)}
-        onSave={(data) => {
-          memberService.create(data);
+        onSave={async (data) => {
+          await memberService.create(data);
+          await memberService.fetchAll();
           setCurrentPath('/members');
         }}
       />

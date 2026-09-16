@@ -59,10 +59,14 @@ export const MemberQRCodeModal: React.FC<MemberQRCodeModalProps> = ({
     img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgString)));
   };
 
-  const handleRegenerate = () => {
+  const handleRegenerate = async () => {
     if (confirm('Regenerate new QR code for this member?')) {
-      const newQR = memberService.regenerateQR(member.id);
-      if (onRegenerated) onRegenerated(newQR);
+      try {
+        const newQR = await memberService.regenerateQR(member.id);
+        if (onRegenerated) onRegenerated(newQR);
+      } catch (err: any) {
+        alert(err?.message || 'Failed to regenerate QR code');
+      }
     }
   };
 
