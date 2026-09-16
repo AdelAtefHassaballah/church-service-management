@@ -1,7 +1,8 @@
 import { ServantAttendanceRecord, AttendanceStatus, UserProfile } from '../types';
 import { storage } from '../lib/storage';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { generateUUID, sanitizeUUID, DEFAULT_CHURCH_ID } from '../lib/uuid';
+import { generateUUID, sanitizeUUID } from '../lib/uuid';
+import { churchService } from './churchService';
 
 export const servantAttendanceService = {
   fetchAll: async (): Promise<ServantAttendanceRecord[]> => {
@@ -13,9 +14,10 @@ export const servantAttendanceService = {
           .order('date', { ascending: false });
 
         if (!error && data) {
+          const activeChurchId = await churchService.getActiveChurchId();
           const mapped: ServantAttendanceRecord[] = data.map((row: any) => ({
             id: row.id,
-            church_id: sanitizeUUID(row.church_id) || DEFAULT_CHURCH_ID,
+            church_id: sanitizeUUID(row.church_id) || activeChurchId,
             service_id: sanitizeUUID(row.service_id) || undefined,
             servant_id: row.servant_id,
             date: row.date,
@@ -52,7 +54,7 @@ export const servantAttendanceService = {
     );
   },
 
-  recordAttendance: (
+  recordAttendance: async (
     servantId: string,
     serviceId?: string,
     date?: string,
@@ -60,8 +62,9 @@ export const servantAttendanceService = {
     recordedBy?: string,
     method: 'manual' | 'qr_scan' = 'manual',
     notes?: string
-  ): ServantAttendanceRecord => {
-    const defaultSrv = storage.getServices()[0]?.id || DEFAULT_CHURCH_ID;
+  ): Promise<ServantAttendanceRecord> => {
+    const activeChurchId = await churchService.getActiveChurchId();
+    const defaultSrv = storage.getServices()[0]?.id || activeChurchId;
     const finalServiceId = serviceId || defaultSrv;
     const targetDate = date || new Date().toISOString().split('T')[0];
 
@@ -73,7 +76,7 @@ export const servantAttendanceService = {
 
     const record: ServantAttendanceRecord = {
       id: existing ? existing.id : generateUUID(),
-      church_id: DEFAULT_CHURCH_ID,
+      church_id: activeChurchId,
       service_id: finalServiceId,
       servant_id: servantId,
       date: targetDate,
@@ -105,7 +108,7 @@ export const servantAttendanceService = {
           .from('servant_attendance')
           .upsert({
             id: record.id,
-            church_id: DEFAULT_CHURCH_ID,
+            church_id: sanitizeUUID(record.church_id),
             service_id: sanitizedSrv,
             servant_id: sanitizedServant,
             date: record.date,
@@ -125,7 +128,7 @@ export const servantAttendanceService = {
     return record;
   },
 
-  saveRecord: (data: Omit<ServantAttendanceRecord, 'id' | 'created_at'>): ServantAttendanceRecord => {
+  saveRecord: async (data: Omit<ServantAttendanceRecord, 'id' | 'created_at'>): Promise<ServantAttendanceRecord> => {
     return servantAttendanceService.recordAttendance(
       data.servant_id,
       data.service_id,
@@ -139,7 +142,7 @@ export const servantAttendanceService = {
 
   saveBatch: async (records: Array<Omit<ServantAttendanceRecord, 'id' | 'created_at'>>): Promise<void> => {
     for (const r of records) {
-      servantAttendanceService.saveRecord(r);
+      await servantAttendanceService.saveRecord(r);
     }
   },
 

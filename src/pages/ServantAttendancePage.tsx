@@ -5,7 +5,6 @@ import { ServantAttendanceRecord, AttendanceStatus, UserProfile, ChurchService }
 import { servantAttendanceService } from '../services/servantAttendanceService';
 import { userService } from '../services/userService';
 import { serviceService } from '../services/serviceService';
-import { DEFAULT_CHURCH_ID } from '../lib/uuid';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
 import { 
@@ -80,7 +79,6 @@ export const ServantAttendancePage: React.FC = () => {
     const recordsToSave: Array<Omit<ServantAttendanceRecord, 'id' | 'created_at'>> = servants.map(s => {
       const item = attendanceMap[s.id] || { status: 'present' };
       return {
-        church_id: DEFAULT_CHURCH_ID,
         service_id: selectedServiceId,
         servant_id: s.id,
         date: selectedDate,

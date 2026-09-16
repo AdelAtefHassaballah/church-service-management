@@ -55,11 +55,11 @@ export const ServicesManagementPage: React.FC = () => {
     );
   });
 
-  const handleSaveService = (data: Partial<ChurchService>) => {
+  const handleSaveService = async (data: Partial<ChurchService>) => {
     if (editingService) {
       serviceService.update(editingService.id, data);
     } else {
-      serviceService.create({
+      await serviceService.create({
         name: data.name || '',
         name_ar: data.name_ar || '',
         description: data.description,

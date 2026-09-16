@@ -1,4 +1,5 @@
 import { isSupabaseConfigured } from '../lib/supabase';
+import { churchService } from './churchService';
 import { userService } from './userService';
 import { memberService } from './memberService';
 import { serviceService } from './serviceService';
@@ -14,6 +15,8 @@ export const syncService = {
     if (!isSupabaseConfigured()) return;
 
     try {
+      await churchService.fetchAll();
+
       await Promise.allSettled([
         userService.fetchAll(),
         memberService.fetchAll(),

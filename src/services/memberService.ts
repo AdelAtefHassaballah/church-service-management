@@ -1,7 +1,8 @@
 import { Member, MemberNote, NoteVisibility } from '../types';
 import { storage } from '../lib/storage';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { generateUUID, sanitizeUUID, DEFAULT_CHURCH_ID } from '../lib/uuid';
+import { generateUUID, sanitizeUUID } from '../lib/uuid';
+import { churchService } from './churchService';
 
 export const memberService = {
   fetchAll: async (): Promise<Member[]> => {
@@ -13,9 +14,10 @@ export const memberService = {
           .order('full_name', { ascending: true });
 
         if (!error && data) {
+          const activeChurchId = await churchService.getActiveChurchId();
           const mapped: Member[] = data.map((row: any) => ({
             id: row.id,
-            church_id: sanitizeUUID(row.church_id) || DEFAULT_CHURCH_ID,
+            church_id: sanitizeUUID(row.church_id) || activeChurchId,
             service_ids: Array.isArray(row.service_ids) ? row.service_ids : [],
             group_id: row.group_id || undefined,
             full_name: row.full_name,
@@ -92,7 +94,15 @@ export const memberService = {
 
   create: async (memberData: Omit<Member, 'id' | 'qr_code' | 'created_at'>): Promise<Member> => {
     const newId = generateUUID();
-    const churchId = sanitizeUUID(memberData.church_id) || DEFAULT_CHURCH_ID;
+    let churchId: string | null = sanitizeUUID(memberData.church_id);
+    if (!churchId) {
+      churchId = await churchService.getActiveChurchId();
+    }
+
+    if (!churchId || !sanitizeUUID(churchId)) {
+      throw new Error('No valid church is associated with this account or found in the database.');
+    }
+
     const assignedServantId = sanitizeUUID(memberData.assigned_servant_id);
     const serviceIds = memberData.service_ids && memberData.service_ids.length > 0 
       ? memberData.service_ids 
@@ -111,7 +121,7 @@ export const memberService = {
     if (isSupabaseConfigured() && supabase) {
       const payload: any = {
         id: newMember.id,
-        church_id: sanitizeUUID(newMember.church_id),
+        church_id: churchId,
         service_ids: newMember.service_ids || [],
         group_id: newMember.group_id || null,
         full_name: newMember.full_name.trim(),

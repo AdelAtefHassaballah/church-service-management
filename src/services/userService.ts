@@ -2,7 +2,8 @@ import { UserProfile, Role, Permission, UserStatus } from '../types';
 import { storage } from '../lib/storage';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { DEFAULT_ROLE_PERMISSIONS } from '../lib/permissions';
-import { generateUUID, sanitizeUUID, DEFAULT_CHURCH_ID } from '../lib/uuid';
+import { generateUUID, sanitizeUUID } from '../lib/uuid';
+import { churchService } from './churchService';
 
 const getAll = (): UserProfile[] => {
   return storage.getProfiles();
@@ -14,13 +15,36 @@ const fetchAll = async (): Promise<UserProfile[]> => {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('name', { ascending: true });
+
       if (!error && data) {
-        data.forEach((p: any) => storage.saveProfile(p));
-        return data as UserProfile[];
+        const mapped: UserProfile[] = data.map((d: any) => ({
+          id: d.id,
+          email: d.email,
+          name: d.name,
+          name_ar: d.name_ar || d.name,
+          role: d.role as Role,
+          avatar_url: d.avatar_url || undefined,
+          phone: d.phone,
+          whatsapp: d.whatsapp || d.phone,
+          address: d.address || undefined,
+          bio: d.bio || undefined,
+          gender: d.gender || 'male',
+          date_of_birth: d.date_of_birth || undefined,
+          church_id: sanitizeUUID(d.church_id) || undefined,
+          service_ids: Array.isArray(d.service_ids) ? d.service_ids : [],
+          group_ids: Array.isArray(d.group_ids) ? d.group_ids : [],
+          permissions: Array.isArray(d.permissions) ? (d.permissions as Permission[]) : [],
+          status: (d.status as UserStatus) || 'active',
+          qr_code: d.qr_code || `SRV-${d.id}`,
+          created_at: d.created_at || new Date().toISOString(),
+          updated_at: d.updated_at || undefined,
+        }));
+        mapped.forEach((p: any) => storage.saveProfile(p));
+        return mapped;
       }
     } catch (err) {
-      console.warn('Supabase fetch profiles error, using local fallback:', err);
+      console.warn('Supabase fetch profiles error:', err);
     }
   }
   return storage.getProfiles();
@@ -30,18 +54,18 @@ const getById = (id: string): UserProfile | undefined => {
   return storage.getProfileById(id);
 };
 
-const createServant = async (data: {
+const createUser = async (data: {
+  email: string;
   name: string;
   name_ar?: string;
-  email: string;
+  role?: Role;
   phone?: string;
   whatsapp?: string;
-  role?: Role;
-  service_ids: string[];
+  address?: string;
+  service_ids?: string[];
   group_ids?: string[];
   date_of_birth?: string;
   gender?: 'male' | 'female';
-  address?: string;
   bio?: string;
   avatar_url?: string;
   permissions?: Permission[];
@@ -51,7 +75,10 @@ const createServant = async (data: {
   const newId = generateUUID();
   const targetRole = data.role || 'servant';
   const initialPerms = data.permissions || DEFAULT_ROLE_PERMISSIONS[targetRole] || DEFAULT_ROLE_PERMISSIONS.servant;
-  const churchId = sanitizeUUID(data.church_id) || DEFAULT_CHURCH_ID;
+  let churchId: string | null = sanitizeUUID(data.church_id);
+  if (!churchId) {
+    churchId = await churchService.getActiveChurchId();
+  }
 
   const newProfile: UserProfile = {
     id: newId,
@@ -339,8 +366,9 @@ export const userService = {
   getAll,
   fetchAll,
   getById,
-  createServant,
-  create: createServant,
+  createUser,
+  createServant: createUser,
+  create: createUser,
   updateUser,
   update: updateUser,
   sendPasswordResetEmail,

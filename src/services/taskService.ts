@@ -1,7 +1,8 @@
 import { Task, TaskPriority, TaskStatus } from '../types';
 import { storage } from '../lib/storage';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { generateUUID, sanitizeUUID, DEFAULT_CHURCH_ID } from '../lib/uuid';
+import { generateUUID, sanitizeUUID } from '../lib/uuid';
+import { churchService } from './churchService';
 
 export const taskService = {
   getAll: async (): Promise<Task[]> => {
@@ -13,9 +14,10 @@ export const taskService = {
           .order('created_at', { ascending: false });
 
         if (!error && data) {
+          const activeChurchId = await churchService.getActiveChurchId();
           const formatted: Task[] = data.map((d: any) => ({
             id: d.id,
-            church_id: sanitizeUUID(d.church_id) || DEFAULT_CHURCH_ID,
+            church_id: sanitizeUUID(d.church_id) || activeChurchId,
             service_id: sanitizeUUID(d.service_id) || undefined,
             group_id: d.group_id || undefined,
             title: d.title,
@@ -53,10 +55,14 @@ export const taskService = {
   create: async (taskData: Omit<Task, 'id' | 'created_at'>): Promise<Task> => {
     const activeUser = storage.getActiveUser();
     const taskId = generateUUID();
+    let churchId = sanitizeUUID(taskData.church_id);
+    if (!churchId) {
+      churchId = await churchService.getActiveChurchId();
+    }
     const newTask: Task = {
       ...taskData,
       id: taskId,
-      church_id: DEFAULT_CHURCH_ID,
+      church_id: churchId,
       created_by: sanitizeUUID(taskData.created_by) || sanitizeUUID(activeUser?.id) || undefined,
       comments_count: 0,
       created_at: new Date().toISOString(),
@@ -89,7 +95,7 @@ export const taskService = {
             .from('tasks')
             .insert({
               id: newTask.id,
-              church_id: DEFAULT_CHURCH_ID,
+              church_id: sanitizeUUID(newTask.church_id),
               title: newTask.title,
               title_ar: newTask.title_ar || null,
               description: newTask.description || null,

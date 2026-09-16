@@ -1,7 +1,8 @@
 import { CalendarEvent } from '../types';
 import { storage } from '../lib/storage';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { generateUUID, sanitizeUUID, DEFAULT_CHURCH_ID } from '../lib/uuid';
+import { generateUUID, sanitizeUUID } from '../lib/uuid';
+import { churchService } from './churchService';
 
 export const calendarService = {
   getAll: async (): Promise<CalendarEvent[]> => {
@@ -14,9 +15,10 @@ export const calendarService = {
           .order('start_time', { ascending: true });
 
         if (!error && data) {
+          const activeChurchId = await churchService.getActiveChurchId();
           const mapped: CalendarEvent[] = data.map((evt: any) => ({
             id: evt.id,
-            church_id: sanitizeUUID(evt.church_id) || DEFAULT_CHURCH_ID,
+            church_id: sanitizeUUID(evt.church_id) || activeChurchId,
             service_id: sanitizeUUID(evt.service_id) || undefined,
             group_id: evt.group_id || undefined,
             title: evt.title,
@@ -60,10 +62,14 @@ export const calendarService = {
   create: async (eventData: Omit<CalendarEvent, 'id' | 'created_at'>): Promise<CalendarEvent> => {
     const activeUser = storage.getActiveUser();
     const newId = generateUUID();
+    let churchId = sanitizeUUID(eventData.church_id);
+    if (!churchId) {
+      churchId = await churchService.getActiveChurchId();
+    }
     const newEvent: CalendarEvent = {
       ...eventData,
       id: newId,
-      church_id: DEFAULT_CHURCH_ID,
+      church_id: churchId,
       created_by: sanitizeUUID(eventData.created_by) || sanitizeUUID(activeUser?.id) || undefined,
       created_at: new Date().toISOString(),
     };
@@ -74,7 +80,7 @@ export const calendarService = {
           .from('calendar_events')
           .insert({
             id: newEvent.id,
-            church_id: DEFAULT_CHURCH_ID,
+            church_id: sanitizeUUID(newEvent.church_id),
             service_id: sanitizeUUID(newEvent.service_id),
             group_id: newEvent.group_id || null,
             title: newEvent.title,

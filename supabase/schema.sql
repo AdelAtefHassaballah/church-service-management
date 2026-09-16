@@ -73,6 +73,16 @@ CREATE TABLE IF NOT EXISTS public.churches (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- Ensure baseline default church exists
+INSERT INTO public.churches (id, name, name_ar, location)
+VALUES (
+    '00000000-0000-0000-0000-000000000001',
+    'St. Mark & St. George Coptic Orthodox Church',
+    'كنيسة الشهيد العظيم مارمرقس والشهيد مارجرجس',
+    'Diocese of Church Service'
+)
+ON CONFLICT (id) DO NOTHING;
+
 -- 4. Church Services / Ministries Table
 CREATE TABLE IF NOT EXISTS public.services (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -386,6 +396,7 @@ $$;
 -- ========================================================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- ========================================================================
+ALTER TABLE public.churches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.services ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.service_leaders ENABLE ROW LEVEL SECURITY;
@@ -401,6 +412,15 @@ ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.weekly_lessons ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.calendar_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+
+-- 0. CHURCHES POLICIES
+DROP POLICY IF EXISTS "Public read churches" ON public.churches;
+CREATE POLICY "Public read churches" ON public.churches
+    FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Authorized manage churches" ON public.churches;
+CREATE POLICY "Authorized manage churches" ON public.churches
+    FOR ALL USING (public.is_super_admin() OR auth.uid() IS NOT NULL);
 
 -- 1. PROFILES POLICIES
 DROP POLICY IF EXISTS "Super Admin manage all profiles" ON public.profiles;

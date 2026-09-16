@@ -1,7 +1,8 @@
 import { WeeklyLesson, LessonSubmissionStatus, LessonAttachment } from '../types';
 import { storage } from '../lib/storage';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { generateUUID, sanitizeUUID, DEFAULT_CHURCH_ID } from '../lib/uuid';
+import { generateUUID, sanitizeUUID } from '../lib/uuid';
+import { churchService } from './churchService';
 
 export interface LessonLeaderStats {
   totalActiveServants: number;
@@ -23,9 +24,10 @@ export const lessonService = {
           .order('lesson_date', { ascending: false });
 
         if (!error && data) {
+          const activeChurchId = await churchService.getActiveChurchId();
           const mapped: WeeklyLesson[] = data.map((lsn: any) => ({
             id: lsn.id,
-            church_id: sanitizeUUID(lsn.church_id) || DEFAULT_CHURCH_ID,
+            church_id: sanitizeUUID(lsn.church_id) || activeChurchId,
             service_id: sanitizeUUID(lsn.service_id) || undefined,
             group_id: lsn.group_id || undefined,
             servant_id: lsn.servant_id,
@@ -128,10 +130,11 @@ export const lessonService = {
     const now = new Date();
     const isLate = now > deadlineDate;
     const status: LessonSubmissionStatus = isLate ? 'late' : 'submitted';
+    const churchId = await churchService.getActiveChurchId();
 
     const lesson: WeeklyLesson = {
       id: existingLessonId && sanitizeUUID(existingLessonId) ? existingLessonId : generateUUID(),
-      church_id: DEFAULT_CHURCH_ID,
+      church_id: churchId,
       service_id: serviceId || undefined,
       group_id: groupId || undefined,
       servant_id: servantId,
@@ -154,7 +157,7 @@ export const lessonService = {
             .from('weekly_lessons')
             .upsert({
               id: lesson.id,
-              church_id: DEFAULT_CHURCH_ID,
+              church_id: sanitizeUUID(lesson.church_id),
               service_id: sanitizeUUID(lesson.service_id),
               group_id: lesson.group_id || null,
               servant_id: sanitizedServant,

@@ -4,7 +4,6 @@ import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { storage } from '../lib/storage';
 import { calendarService } from '../services/calendarService';
-import { DEFAULT_CHURCH_ID } from '../lib/uuid';
 import { Modal } from '../components/common/Modal';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
@@ -210,7 +209,6 @@ export const CalendarPage: React.FC = () => {
         });
       } else {
         await calendarService.create({
-          church_id: DEFAULT_CHURCH_ID,
           service_id: serviceId || undefined,
           title,
           title_ar: titleAr || title,

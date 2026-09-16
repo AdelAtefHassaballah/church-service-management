@@ -8,7 +8,6 @@ import { qrService } from '../../services/qrService';
 import { attendanceService } from '../../services/attendanceService';
 import { servantAttendanceService } from '../../services/servantAttendanceService';
 import { serviceService } from '../../services/serviceService';
-import { DEFAULT_CHURCH_ID } from '../../lib/uuid';
 import { Button } from '../common/Button';
 import { Badge } from '../common/Badge';
 import { 
@@ -182,7 +181,6 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({ onScanSuccess }) =
     const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     servantAttendanceService.saveRecord({
-      church_id: DEFAULT_CHURCH_ID,
       service_id: selectedServiceId,
       servant_id: servant.id,
       date: today,

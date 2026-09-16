@@ -9,8 +9,6 @@ import { taskService } from '../../services/taskService';
 import { CheckSquare, Save, AlertCircle } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
-import { DEFAULT_CHURCH_ID } from '../../lib/uuid';
-
 interface CreateTaskModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -62,7 +60,6 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
     setIsSubmitting(true);
     try {
       await taskService.create({
-        church_id: DEFAULT_CHURCH_ID,
         service_id: serviceId || undefined,
         group_id: groupId || undefined,
         title: title.trim(),

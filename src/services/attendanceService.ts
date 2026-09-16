@@ -1,7 +1,8 @@
 import { AttendanceRecord, AttendanceStatus, Member } from '../types';
 import { storage } from '../lib/storage';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { generateUUID, sanitizeUUID, DEFAULT_CHURCH_ID } from '../lib/uuid';
+import { generateUUID, sanitizeUUID } from '../lib/uuid';
+import { churchService } from './churchService';
 
 export interface AbsentMemberSummary {
   member: Member;
@@ -21,9 +22,10 @@ export const attendanceService = {
           .select('*')
           .order('date', { ascending: false });
         if (!error && data) {
+          const activeChurchId = await churchService.getActiveChurchId();
           const mapped: AttendanceRecord[] = data.map((r: any) => ({
             id: r.id,
-            church_id: sanitizeUUID(r.church_id) || DEFAULT_CHURCH_ID,
+            church_id: sanitizeUUID(r.church_id) || activeChurchId,
             service_id: r.service_id,
             group_id: r.group_id || undefined,
             session_name: r.session_name || 'Regular Meeting',
@@ -86,13 +88,14 @@ export const attendanceService = {
     sessionName: string = 'Regular Meeting',
     notes?: string
   ): Promise<AttendanceRecord> => {
-    const defaultSrv = storage.getServices()[0]?.id || DEFAULT_CHURCH_ID;
+    const churchId = await churchService.getActiveChurchId();
+    const defaultSrv = storage.getServices()[0]?.id || churchId;
     const finalServiceId = serviceId || defaultSrv;
     const existing = attendanceService.checkDuplicate(memberId, finalServiceId, date, sessionName);
 
     const record: AttendanceRecord = {
       id: existing ? existing.id : generateUUID(),
-      church_id: DEFAULT_CHURCH_ID,
+      church_id: churchId,
       service_id: finalServiceId,
       session_name: sessionName,
       group_id: groupId || undefined,
@@ -116,7 +119,7 @@ export const attendanceService = {
             .from('attendance_records')
             .upsert({
               id: record.id,
-              church_id: DEFAULT_CHURCH_ID,
+              church_id: sanitizeUUID(record.church_id),
               service_id: sanitizedService,
               session_name: record.session_name,
               group_id: record.group_id || null,
@@ -151,12 +154,13 @@ export const attendanceService = {
 
   saveBulk: async (records: Omit<AttendanceRecord, 'id' | 'church_id' | 'created_at'>[]): Promise<void> => {
     const activeUser = storage.getActiveUser();
-    const defaultSrv = storage.getServices()[0]?.id || DEFAULT_CHURCH_ID;
+    const churchId = await churchService.getActiveChurchId();
+    const defaultSrv = storage.getServices()[0]?.id || churchId;
 
     const formattedRecords: AttendanceRecord[] = records.map(r => ({
       ...r,
       id: generateUUID(),
-      church_id: DEFAULT_CHURCH_ID,
+      church_id: churchId,
       service_id: r.service_id || defaultSrv,
       session_name: r.session_name || 'Regular Meeting',
       created_at: new Date().toISOString(),
@@ -168,7 +172,7 @@ export const attendanceService = {
           .filter(r => sanitizeUUID(r.member_id) && sanitizeUUID(r.service_id))
           .map(r => ({
             id: r.id,
-            church_id: DEFAULT_CHURCH_ID,
+            church_id: sanitizeUUID(r.church_id),
             service_id: sanitizeUUID(r.service_id)!,
             session_name: r.session_name || 'Regular Meeting',
             group_id: r.group_id || null,

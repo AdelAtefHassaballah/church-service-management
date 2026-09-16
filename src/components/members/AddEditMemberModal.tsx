@@ -7,7 +7,7 @@ import { storage } from '../../lib/storage';
 import { serviceService } from '../../services/serviceService';
 import { UserPlus, Save, AlertCircle } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { DEFAULT_CHURCH_ID, sanitizeUUID } from '../../lib/uuid';
+import { sanitizeUUID } from '../../lib/uuid';
 
 interface AddEditMemberModalProps {
   isOpen: boolean;
@@ -149,7 +149,7 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
         phone: cleanPhone,
         whatsapp: formData.whatsapp.trim() || cleanPhone,
         email: formData.email ? formData.email.trim() : undefined,
-        church_id: DEFAULT_CHURCH_ID,
+        church_id: member ? member.church_id : undefined,
         assigned_servant_id: sanitizeUUID(formData.assigned_servant_id) || undefined,
         join_date: member ? member.join_date : new Date().toISOString().split('T')[0],
       });

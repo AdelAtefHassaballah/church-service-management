@@ -1,7 +1,8 @@
 import { ChurchService, ServiceType, Member, UserProfile, MemberServantAssignment } from '../types';
 import { storage } from '../lib/storage';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { generateUUID, sanitizeUUID, DEFAULT_CHURCH_ID } from '../lib/uuid';
+import { generateUUID, sanitizeUUID } from '../lib/uuid';
+import { churchService } from './churchService';
 
 export const serviceService = {
   fetchAll: async (): Promise<ChurchService[]> => {
@@ -19,6 +20,8 @@ export const serviceService = {
           const servantsData = servantsRes.status === 'fulfilled' && !servantsRes.value.error ? (servantsRes.value.data || []) : [];
           const membersData = membersRes.status === 'fulfilled' && !membersRes.value.error ? (membersRes.value.data || []) : [];
 
+          const activeChurchId = await churchService.getActiveChurchId();
+
           const mapped: ChurchService[] = servicesRes.value.data.map((row: any) => {
             const srvId = row.id;
             const leaderIds = leadersData
@@ -33,7 +36,7 @@ export const serviceService = {
 
             return {
               id: srvId,
-              church_id: sanitizeUUID(row.church_id) || DEFAULT_CHURCH_ID,
+              church_id: sanitizeUUID(row.church_id) || activeChurchId,
               name: row.name,
               name_ar: row.name_ar,
               description: row.description || undefined,
@@ -71,7 +74,7 @@ export const serviceService = {
     return storage.getServiceById(id);
   },
 
-  create: (data: {
+  create: async (data: {
     name: string;
     name_ar: string;
     description?: string;
@@ -87,12 +90,13 @@ export const serviceService = {
     status?: 'active' | 'disabled';
     color?: string;
     notes?: string;
-  }): ChurchService => {
+  }): Promise<ChurchService> => {
     const newId = generateUUID();
+    const churchId = await churchService.getActiveChurchId();
     const newService: ChurchService = {
       ...data,
       id: newId,
-      church_id: DEFAULT_CHURCH_ID,
+      church_id: churchId,
       leader_ids: data.leader_ids || [],
       servant_ids: data.servant_ids || [],
       member_ids: data.member_ids || [],
