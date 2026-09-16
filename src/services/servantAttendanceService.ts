@@ -1,6 +1,7 @@
 import { ServantAttendanceRecord, AttendanceStatus, UserProfile } from '../types';
 import { storage } from '../lib/storage';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { generateUUID, sanitizeUUID, DEFAULT_CHURCH_ID } from '../lib/uuid';
 
 export const servantAttendanceService = {
   fetchAll: async (): Promise<ServantAttendanceRecord[]> => {
@@ -14,14 +15,14 @@ export const servantAttendanceService = {
         if (!error && data) {
           const mapped: ServantAttendanceRecord[] = data.map((row: any) => ({
             id: row.id,
-            church_id: row.church_id || 'church-1',
-            service_id: row.service_id,
+            church_id: sanitizeUUID(row.church_id) || DEFAULT_CHURCH_ID,
+            service_id: sanitizeUUID(row.service_id) || undefined,
             servant_id: row.servant_id,
             date: row.date,
             status: row.status || 'present',
             check_in_time: row.check_in_time || undefined,
-            recorded_by: row.recorded_by || 'admin',
-            method: row.method || 'manual',
+            recorded_by: sanitizeUUID(row.recorded_by) || undefined,
+            method: (row.method === 'qr_scan' ? 'qr_scan' : 'manual'),
             notes: row.notes || undefined,
             created_at: row.created_at || new Date().toISOString(),
           }));
@@ -41,37 +42,41 @@ export const servantAttendanceService = {
 
   getByServiceAndDate: (serviceId: string, date: string): ServantAttendanceRecord[] => {
     return storage.getServantAttendance().filter(
-      r => (serviceId === 'all' || r.service_id === serviceId) && r.date === date
+      r => (serviceId === 'all' || !r.service_id || r.service_id === serviceId) && r.date === date
     );
   },
 
   getByDate: (date: string, serviceId?: string): ServantAttendanceRecord[] => {
     return storage.getServantAttendance().filter(
-      r => (!serviceId || serviceId === 'all' || r.service_id === serviceId) && r.date === date
+      r => (!serviceId || serviceId === 'all' || !r.service_id || r.service_id === serviceId) && r.date === date
     );
   },
 
   recordAttendance: (
     servantId: string,
-    serviceId: string,
-    date: string,
-    status: AttendanceStatus,
-    recordedBy: string,
+    serviceId?: string,
+    date?: string,
+    status: AttendanceStatus = 'present',
+    recordedBy?: string,
     method: 'manual' | 'qr_scan' = 'manual',
     notes?: string
   ): ServantAttendanceRecord => {
+    const defaultSrv = storage.getServices()[0]?.id || DEFAULT_CHURCH_ID;
+    const finalServiceId = serviceId || defaultSrv;
+    const targetDate = date || new Date().toISOString().split('T')[0];
+
     const existing = storage.getServantAttendance().find(
-      r => r.servant_id === servantId && r.date === date && (r.service_id === serviceId || !serviceId)
+      r => r.servant_id === servantId && r.date === targetDate && (r.service_id === finalServiceId || !finalServiceId)
     );
 
     const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     const record: ServantAttendanceRecord = {
-      id: existing ? existing.id : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'satt-' + Date.now()),
-      church_id: 'church-1',
-      service_id: serviceId,
+      id: existing ? existing.id : generateUUID(),
+      church_id: DEFAULT_CHURCH_ID,
+      service_id: finalServiceId,
       servant_id: servantId,
-      date,
+      date: targetDate,
       status,
       check_in_time: existing?.check_in_time || nowTime,
       recorded_by: recordedBy,
@@ -91,23 +96,30 @@ export const servantAttendanceService = {
     );
 
     if (isSupabaseConfigured() && supabase) {
-      supabase
-        .from('servant_attendance')
-        .upsert({
-          id: record.id,
-          service_id: record.service_id && record.service_id.length === 36 ? record.service_id : null,
-          servant_id: record.servant_id && record.servant_id.length === 36 ? record.servant_id : null,
-          date: record.date,
-          status: record.status,
-          check_in_time: record.check_in_time,
-          recorded_by: record.recorded_by && record.recorded_by.length === 36 ? record.recorded_by : null,
-          method: record.method,
-          notes: record.notes || null,
-          created_at: record.created_at,
-        }, { onConflict: 'service_id,servant_id,date' })
-        .then(({ error }) => {
-          if (error) console.warn('Remote Supabase servant attendance upsert error:', error.message);
-        });
+      const sanitizedSrv = sanitizeUUID(record.service_id);
+      const sanitizedServant = sanitizeUUID(record.servant_id);
+      const sanitizedRecordedBy = sanitizeUUID(record.recorded_by);
+
+      if (sanitizedServant && sanitizedSrv) {
+        supabase
+          .from('servant_attendance')
+          .upsert({
+            id: record.id,
+            church_id: DEFAULT_CHURCH_ID,
+            service_id: sanitizedSrv,
+            servant_id: sanitizedServant,
+            date: record.date,
+            status: record.status,
+            check_in_time: record.check_in_time,
+            recorded_by: sanitizedRecordedBy,
+            method: record.method,
+            notes: record.notes || null,
+            created_at: record.created_at,
+          }, { onConflict: 'service_id,servant_id,date' })
+          .then(({ error }) => {
+            if (error) console.warn('Remote Supabase servant attendance upsert error:', error.message);
+          });
+      }
     }
 
     return record;

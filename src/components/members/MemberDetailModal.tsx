@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Member, ServiceGroup, UserProfile, AttendanceRecord } from '../../types';
 import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
 import { Badge } from '../common/Badge';
 import { useLanguage } from '../../context/LanguageContext';
 import { attendanceService } from '../../services/attendanceService';
+import { memberService } from '../../services/memberService';
 import { storage } from '../../lib/storage';
 import { 
   User, 
@@ -43,9 +44,16 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
   const [activeTab, setActiveTab] = useState<'overview' | 'attendance' | 'notes' | 'qr'>('overview');
   const [newNote, setNewNote] = useState('');
   const [noteVisibility, setNoteVisibility] = useState<any>('all_leaders_servants');
+  const [notesList, setNotesList] = useState<any[]>([]);
   const isAr = language === 'ar';
 
   const services = storage.getServices();
+
+  useEffect(() => {
+    if (member && activeTab === 'notes') {
+      memberService.fetchNotes(member.id).then(setNotesList);
+    }
+  }, [member, activeTab]);
 
   if (!member) return null;
 
@@ -55,13 +63,25 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
   const totalCount = attendanceHistory.length || 1;
   const attendanceRate = Math.round((presentCount / totalCount) * 100);
 
-  const handleAddNote = (e: React.FormEvent) => {
+  const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newNote.trim()) return;
     const activeUser = storage.getActiveUser();
-    storage.logAction('MEMBER_NOTE_ADDED', 'member', `Note added for ${member.full_name}: "${newNote.slice(0, 30)}..."`, member.id);
+    
+    const note = await memberService.addNote({
+      member_id: member.id,
+      author_id: activeUser?.id || '00000000-0000-0000-0000-000000000000',
+      content: newNote.trim(),
+      visibility: noteVisibility,
+    });
+
+    setNotesList(prev => [note, ...prev]);
     setNewNote('');
-    alert(isAr ? 'تم حفظ ملاحظة الافتقاد بنجاح' : 'Care note saved successfully!');
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    await memberService.deleteNote(noteId);
+    setNotesList(prev => prev.filter(n => n.id !== noteId));
   };
 
   return (
@@ -332,6 +352,35 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
                 </Button>
               </div>
             </form>
+
+            {notesList.length === 0 ? (
+              <p className="text-center text-xs text-slate-400 py-4">
+                {isAr ? 'لا توجد ملاحظات رعوية مسجلة حتى الآن' : 'No pastoral care notes recorded yet.'}
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {notesList.map(note => (
+                  <div key={note.id} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 text-xs flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-slate-800 dark:text-slate-200">{note.content}</p>
+                      <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
+                        <span>{new Date(note.created_at).toLocaleDateString()}</span>
+                        <span>•</span>
+                        <Badge variant="neutral" size="sm">{note.visibility}</Badge>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteNote(note.id)}
+                      className="text-slate-400 hover:text-rose-600 transition-colors p-1"
+                      title="Delete note"
+                    >
+                      <XCircle className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

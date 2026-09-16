@@ -1,6 +1,7 @@
 import { WeeklyLesson, LessonSubmissionStatus, LessonAttachment } from '../types';
 import { storage } from '../lib/storage';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { generateUUID, sanitizeUUID, DEFAULT_CHURCH_ID } from '../lib/uuid';
 
 export interface LessonLeaderStats {
   totalActiveServants: number;
@@ -20,9 +21,28 @@ export const lessonService = {
           .from('weekly_lessons')
           .select('*')
           .order('lesson_date', { ascending: false });
+
         if (!error && data) {
-          data.forEach((lsn: any) => storage.saveLesson(lsn));
-          return data as WeeklyLesson[];
+          const mapped: WeeklyLesson[] = data.map((lsn: any) => ({
+            id: lsn.id,
+            church_id: sanitizeUUID(lsn.church_id) || DEFAULT_CHURCH_ID,
+            service_id: sanitizeUUID(lsn.service_id) || undefined,
+            group_id: lsn.group_id || undefined,
+            servant_id: lsn.servant_id,
+            title: lsn.title,
+            lesson_date: lsn.lesson_date,
+            deadline: lsn.deadline,
+            submission_date: lsn.submission_date || undefined,
+            description: lsn.description || undefined,
+            bible_reference: lsn.bible_reference || undefined,
+            status: lsn.status || 'missing',
+            attachments: Array.isArray(lsn.attachments) ? lsn.attachments : [],
+            leader_feedback: lsn.leader_feedback || undefined,
+            created_at: lsn.created_at || new Date().toISOString(),
+          }));
+
+          mapped.forEach((lsn) => storage.saveLesson(lsn));
+          return mapped;
         }
       } catch (err) {
         console.warn('Supabase lessons fetch error, using local storage:', err);
@@ -42,7 +62,7 @@ export const lessonService = {
   },
 
   uploadFile: async (file: File): Promise<LessonAttachment> => {
-    const id = 'att-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
+    const id = generateUUID();
 
     // Convert file to Base64 data URL for persistent offline/local storage
     const base64Url = await new Promise<string>((resolve, reject) => {
@@ -92,7 +112,8 @@ export const lessonService = {
     description?: string,
     bibleReference?: string,
     attachments: LessonAttachment[] = [],
-    existingLessonId?: string
+    existingLessonId?: string,
+    serviceId?: string
   ): Promise<WeeklyLesson> => {
     const activeUser = storage.getActiveUser();
 
@@ -109,55 +130,62 @@ export const lessonService = {
     const status: LessonSubmissionStatus = isLate ? 'late' : 'submitted';
 
     const lesson: WeeklyLesson = {
-      id: existingLessonId || 'lsn-' + Date.now(),
-      church_id: 'church-1',
-      group_id: groupId,
+      id: existingLessonId && sanitizeUUID(existingLessonId) ? existingLessonId : generateUUID(),
+      church_id: DEFAULT_CHURCH_ID,
+      service_id: serviceId || undefined,
+      group_id: groupId || undefined,
       servant_id: servantId,
-      title,
+      title: title.trim(),
       lesson_date: lessonDate,
       deadline: deadlineDate.toISOString(),
       submission_date: now.toISOString(),
-      description,
-      bible_reference: bibleReference,
+      description: description?.trim() || undefined,
+      bible_reference: bibleReference?.trim() || undefined,
       status,
       attachments,
       created_at: now.toISOString(),
     };
 
     if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('weekly_lessons')
-          .upsert({
-            id: lesson.id,
-            church_id: lesson.church_id,
-            group_id: lesson.group_id,
-            servant_id: lesson.servant_id,
-            title: lesson.title,
-            lesson_date: lesson.lesson_date,
-            deadline: lesson.deadline,
-            submission_date: lesson.submission_date,
-            description: lesson.description,
-            bible_reference: lesson.bible_reference,
-            status: lesson.status,
-            attachments: lesson.attachments,
-            leader_feedback: lesson.leader_feedback,
-          })
-          .select()
-          .single();
+      const sanitizedServant = sanitizeUUID(servantId);
+      if (sanitizedServant) {
+        try {
+          const { data, error } = await supabase
+            .from('weekly_lessons')
+            .upsert({
+              id: lesson.id,
+              church_id: DEFAULT_CHURCH_ID,
+              service_id: sanitizeUUID(lesson.service_id),
+              group_id: lesson.group_id || null,
+              servant_id: sanitizedServant,
+              title: lesson.title,
+              lesson_date: lesson.lesson_date,
+              deadline: lesson.deadline,
+              submission_date: lesson.submission_date,
+              description: lesson.description || null,
+              bible_reference: lesson.bible_reference || null,
+              status: lesson.status,
+              attachments: lesson.attachments || [],
+              leader_feedback: lesson.leader_feedback || null,
+              created_at: lesson.created_at,
+            })
+            .select()
+            .single();
 
-        if (!error && data) {
-          storage.saveLesson(data as WeeklyLesson);
-          storage.logAction(
-            'LESSON_SUBMITTED',
-            'weekly_lesson',
-            `Servant ${activeUser?.name || 'Servant'} submitted lesson "${title}" (${status})`,
-            data.id
-          );
-          return data as WeeklyLesson;
+          if (!error && data) {
+            const saved: WeeklyLesson = { ...lesson, id: data.id };
+            storage.saveLesson(saved);
+            storage.logAction(
+              'LESSON_SUBMITTED',
+              'weekly_lesson',
+              `Servant ${activeUser?.name || 'Servant'} submitted lesson "${title}" (${status})`,
+              data.id
+            );
+            return saved;
+          }
+        } catch (err) {
+          console.warn('Supabase upsert lesson error, fallback local:', err);
         }
-      } catch (err) {
-        console.warn('Supabase upsert lesson error, fallback local:', err);
       }
     }
 
@@ -173,7 +201,7 @@ export const lessonService = {
   },
 
   addFeedback: async (lessonId: string, feedback: string): Promise<void> => {
-    if (isSupabaseConfigured() && supabase) {
+    if (isSupabaseConfigured() && supabase && sanitizeUUID(lessonId)) {
       try {
         await supabase
           .from('weekly_lessons')

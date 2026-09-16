@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { ServantAttendanceRecord, AttendanceStatus, UserProfile, ChurchService } from '../types';
-import { servantAttendanceService } from '../../src/services/servantAttendanceService';
+import { servantAttendanceService } from '../services/servantAttendanceService';
 import { userService } from '../services/userService';
 import { serviceService } from '../services/serviceService';
+import { DEFAULT_CHURCH_ID } from '../lib/uuid';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
 import { 
@@ -79,13 +80,13 @@ export const ServantAttendancePage: React.FC = () => {
     const recordsToSave: Array<Omit<ServantAttendanceRecord, 'id' | 'created_at'>> = servants.map(s => {
       const item = attendanceMap[s.id] || { status: 'present' };
       return {
-        church_id: 'church-1',
+        church_id: DEFAULT_CHURCH_ID,
         service_id: selectedServiceId,
         servant_id: s.id,
         date: selectedDate,
         status: item.status,
         check_in_time: item.checkInTime,
-        recorded_by: currentUser?.id || 'admin',
+        recorded_by: currentUser?.id,
         method: 'manual',
       };
     });

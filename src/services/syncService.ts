@@ -7,6 +7,7 @@ import { calendarService } from './calendarService';
 import { lessonService } from './lessonService';
 import { attendanceService } from './attendanceService';
 import { servantAttendanceService } from './servantAttendanceService';
+import { qrService } from './qrService';
 
 export const syncService = {
   syncAll: async (): Promise<void> => {
@@ -22,6 +23,7 @@ export const syncService = {
         lessonService.getAll(),
         attendanceService.getAll(),
         servantAttendanceService.fetchAll(),
+        qrService.fetchAll(),
       ]);
     } catch (err) {
       console.warn('Background database sync error:', err);

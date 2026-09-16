@@ -11,7 +11,8 @@ import {
   AppNotification, 
   AuditLog,
   QRCodeRecord,
-  MemberServantAssignment
+  MemberServantAssignment,
+  MemberNote
 } from '../types';
 
 const STORAGE_KEYS = {
@@ -19,6 +20,7 @@ const STORAGE_KEYS = {
   SERVICES: 'khedma_prod_services',
   GROUPS: 'khedma_prod_groups',
   MEMBERS: 'khedma_prod_members',
+  MEMBER_NOTES: 'khedma_prod_member_notes',
   ATTENDANCE: 'khedma_prod_attendance',
   SERVANT_ATTENDANCE: 'khedma_prod_servant_attendance',
   QR_CODES: 'khedma_prod_qr_codes',
@@ -176,6 +178,32 @@ export const storage = {
   deleteMember: (id: string) => {
     const members = storage.getMembers().filter(m => m.id !== id);
     save(STORAGE_KEYS.MEMBERS, members);
+  },
+
+  // Member Notes
+  getMemberNotes: (memberId?: string): MemberNote[] => {
+    const notes = load<MemberNote[]>(STORAGE_KEYS.MEMBER_NOTES, []);
+    if (memberId) {
+      return notes.filter(n => n.member_id === memberId);
+    }
+    return notes;
+  },
+  saveMemberNote: (note: MemberNote) => {
+    const notes = storage.getMemberNotes();
+    const idx = notes.findIndex(n => n.id === note.id);
+    if (idx >= 0) {
+      notes[idx] = note;
+    } else {
+      notes.unshift(note);
+    }
+    save(STORAGE_KEYS.MEMBER_NOTES, notes);
+  },
+  saveMemberNotes: (notes: MemberNote[]) => {
+    save(STORAGE_KEYS.MEMBER_NOTES, notes);
+  },
+  deleteMemberNote: (id: string) => {
+    const notes = storage.getMemberNotes().filter(n => n.id !== id);
+    save(STORAGE_KEYS.MEMBER_NOTES, notes);
   },
 
   // Attendance

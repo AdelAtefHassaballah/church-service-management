@@ -6,6 +6,8 @@ import { useLanguage } from '../../context/LanguageContext';
 import { storage } from '../../lib/storage';
 import { UserPlus, Save, User } from 'lucide-react';
 
+import { DEFAULT_CHURCH_ID } from '../../lib/uuid';
+
 interface AddEditMemberModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -88,7 +90,7 @@ export const AddEditMemberModal: React.FC<AddEditMemberModalProps> = ({
     e.preventDefault();
     onSave({
       ...formData,
-      church_id: 'church-1',
+      church_id: DEFAULT_CHURCH_ID,
       join_date: member ? member.join_date : new Date().toISOString().split('T')[0],
     });
     onClose();

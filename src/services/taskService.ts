@@ -1,6 +1,7 @@
 import { Task, TaskPriority, TaskStatus } from '../types';
 import { storage } from '../lib/storage';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { generateUUID, sanitizeUUID, DEFAULT_CHURCH_ID } from '../lib/uuid';
 
 export const taskService = {
   getAll: async (): Promise<Task[]> => {
@@ -10,28 +11,29 @@ export const taskService = {
           .from('tasks')
           .select('*')
           .order('created_at', { ascending: false });
+
         if (!error && data) {
-          const formatted: Task[] = data.map(d => ({
+          const formatted: Task[] = data.map((d: any) => ({
             id: d.id,
-            church_id: d.church_id || 'church-1',
-            service_id: d.service_id,
-            group_id: d.group_id,
+            church_id: sanitizeUUID(d.church_id) || DEFAULT_CHURCH_ID,
+            service_id: sanitizeUUID(d.service_id) || undefined,
+            group_id: d.group_id || undefined,
             title: d.title,
-            title_ar: d.title_ar,
-            description: d.description,
+            title_ar: d.title_ar || undefined,
+            description: d.description || undefined,
             assigned_to: d.assigned_to,
-            created_by: d.created_by,
-            priority: d.priority,
-            status: d.status,
+            created_by: sanitizeUUID(d.created_by) || undefined,
+            priority: d.priority || 'medium',
+            status: d.status || 'pending',
             due_date: d.due_date,
-            due_time: d.due_time,
-            notes: d.notes,
-            related_member_id: d.related_member_id,
-            attachments: d.attachments || [],
-            created_at: d.created_at,
-            updated_at: d.updated_at,
+            due_time: d.due_time || undefined,
+            notes: d.notes || undefined,
+            related_member_id: sanitizeUUID(d.related_member_id) || undefined,
+            attachments: Array.isArray(d.attachments) ? d.attachments : [],
+            created_at: d.created_at || new Date().toISOString(),
+            updated_at: d.updated_at || undefined,
           }));
-          // Sync local storage cache
+
           for (const t of formatted) {
             storage.saveTask(t);
           }
@@ -48,13 +50,14 @@ export const taskService = {
     return storage.getTasks().filter(t => t.assigned_to === servantId);
   },
 
-  create: async (taskData: Omit<Task, 'id' | 'created_at' | 'created_by'>): Promise<Task> => {
+  create: async (taskData: Omit<Task, 'id' | 'created_at'>): Promise<Task> => {
     const activeUser = storage.getActiveUser();
-    const taskId = 'tsk-' + Date.now();
+    const taskId = generateUUID();
     const newTask: Task = {
       ...taskData,
       id: taskId,
-      created_by: activeUser?.id || 'system',
+      church_id: DEFAULT_CHURCH_ID,
+      created_by: sanitizeUUID(taskData.created_by) || sanitizeUUID(activeUser?.id) || undefined,
       comments_count: 0,
       created_at: new Date().toISOString(),
     };
@@ -65,7 +68,7 @@ export const taskService = {
 
     // Trigger in-app notification for assigned user
     storage.addNotification({
-      id: 'notif-' + Date.now(),
+      id: generateUUID(),
       user_id: newTask.assigned_to,
       title: 'New Task Assigned',
       title_ar: 'تم إسناد مهمة جديدة لك',
@@ -79,25 +82,41 @@ export const taskService = {
 
     // Write to Supabase if configured
     if (isSupabaseConfigured() && supabase) {
-      try {
-        await supabase.from('tasks').insert({
-          title: newTask.title,
-          title_ar: newTask.title_ar,
-          description: newTask.description,
-          service_id: newTask.service_id || null,
-          group_id: newTask.group_id || null,
-          assigned_to: newTask.assigned_to,
-          created_by: activeUser?.id || null,
-          priority: newTask.priority,
-          status: newTask.status,
-          due_date: newTask.due_date,
-          due_time: newTask.due_time || null,
-          notes: newTask.notes || null,
-          related_member_id: newTask.related_member_id || null,
-          attachments: newTask.attachments || [],
-        });
-      } catch (err) {
-        console.error('Supabase task insert error:', err);
+      const sanitizedAssignedTo = sanitizeUUID(newTask.assigned_to);
+      if (sanitizedAssignedTo) {
+        try {
+          const { data, error } = await supabase
+            .from('tasks')
+            .insert({
+              id: newTask.id,
+              church_id: DEFAULT_CHURCH_ID,
+              title: newTask.title,
+              title_ar: newTask.title_ar || null,
+              description: newTask.description || null,
+              service_id: sanitizeUUID(newTask.service_id),
+              group_id: newTask.group_id || null,
+              assigned_to: sanitizedAssignedTo,
+              created_by: sanitizeUUID(newTask.created_by),
+              priority: newTask.priority || 'medium',
+              status: newTask.status || 'pending',
+              due_date: newTask.due_date,
+              due_time: newTask.due_time || null,
+              notes: newTask.notes || null,
+              related_member_id: sanitizeUUID(newTask.related_member_id),
+              attachments: newTask.attachments || [],
+              created_at: newTask.created_at,
+            })
+            .select()
+            .single();
+
+          if (!error && data) {
+            const saved: Task = { ...newTask, id: data.id };
+            storage.saveTask(saved);
+            return saved;
+          }
+        } catch (err) {
+          console.error('Supabase task insert error:', err);
+        }
       }
     }
 
@@ -118,23 +137,28 @@ export const taskService = {
     storage.saveTask(updatedTask);
     storage.logAction('TASK_UPDATED', 'task', `Updated task "${updatedTask.title}"`, taskId);
 
-    if (isSupabaseConfigured() && supabase) {
+    if (isSupabaseConfigured() && supabase && sanitizeUUID(taskId)) {
       try {
+        const payload: any = {
+          updated_at: updatedTask.updated_at,
+        };
+        if (updates.title !== undefined) payload.title = updates.title;
+        if (updates.title_ar !== undefined) payload.title_ar = updates.title_ar || null;
+        if (updates.description !== undefined) payload.description = updates.description || null;
+        if (updates.service_id !== undefined) payload.service_id = sanitizeUUID(updates.service_id);
+        if (updates.group_id !== undefined) payload.group_id = updates.group_id || null;
+        if (updates.assigned_to !== undefined) payload.assigned_to = sanitizeUUID(updates.assigned_to) || updatedTask.assigned_to;
+        if (updates.priority !== undefined) payload.priority = updates.priority;
+        if (updates.status !== undefined) payload.status = updates.status;
+        if (updates.due_date !== undefined) payload.due_date = updates.due_date;
+        if (updates.due_time !== undefined) payload.due_time = updates.due_time || null;
+        if (updates.notes !== undefined) payload.notes = updates.notes || null;
+        if (updates.related_member_id !== undefined) payload.related_member_id = sanitizeUUID(updates.related_member_id);
+        if (updates.attachments !== undefined) payload.attachments = updates.attachments || [];
+
         await supabase
           .from('tasks')
-          .update({
-            title: updatedTask.title,
-            title_ar: updatedTask.title_ar,
-            description: updatedTask.description,
-            service_id: updatedTask.service_id || null,
-            assigned_to: updatedTask.assigned_to,
-            priority: updatedTask.priority,
-            status: updatedTask.status,
-            due_date: updatedTask.due_date,
-            due_time: updatedTask.due_time || null,
-            notes: updatedTask.notes || null,
-            updated_at: updatedTask.updated_at,
-          })
+          .update(payload)
           .eq('id', taskId);
       } catch (err) {
         console.error('Supabase task update error:', err);
@@ -152,7 +176,7 @@ export const taskService = {
     storage.deleteTask(taskId);
     storage.logAction('TASK_DELETED', 'task', `Deleted task ${taskId}`, taskId);
 
-    if (isSupabaseConfigured() && supabase) {
+    if (isSupabaseConfigured() && supabase && sanitizeUUID(taskId)) {
       try {
         await supabase.from('tasks').delete().eq('id', taskId);
       } catch (err) {

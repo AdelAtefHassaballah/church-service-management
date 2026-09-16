@@ -82,14 +82,14 @@ export type ServiceType =
 
 export interface ChurchService {
   id: string;
-  church_id: string;
+  church_id?: string;
   name: string;
   name_ar: string;
   description?: string;
   description_ar?: string;
   service_type: ServiceType;
   location?: string;
-  day_of_week?: 'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday';
+  day_of_week?: 'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | string;
   start_time?: string;
   end_time?: string;
   leader_ids: string[];
@@ -104,7 +104,7 @@ export interface ChurchService {
 export interface ServiceGroup {
   id: string;
   service_id?: string;
-  church_id: string;
+  church_id?: string;
   name: string;
   name_ar: string;
   description?: string;
@@ -126,7 +126,7 @@ export type MemberStatus = 'active' | 'inactive' | 'archived';
 
 export interface Member {
   id: string;
-  church_id: string;
+  church_id?: string;
   service_ids: string[]; // Member can belong to multiple services
   group_id?: string;
   full_name: string;
@@ -169,14 +169,14 @@ export type AttendanceStatus = 'present' | 'absent' | 'excused';
 
 export interface AttendanceRecord {
   id: string;
-  church_id: string;
+  church_id?: string;
   service_id: string; // Mandatory service/ministry
   group_id?: string;
   session_name?: string; // e.g. "Regular Sunday School", "Friday Youth Meeting"
   member_id: string;
   date: string; // YYYY-MM-DD
   status: AttendanceStatus;
-  recorded_by: string; // User ID
+  recorded_by?: string; // User ID
   notes?: string;
   method: 'manual' | 'qr_scan';
   created_at: string;
@@ -184,12 +184,12 @@ export interface AttendanceRecord {
 
 export interface ServantAttendanceRecord {
   id: string;
-  church_id: string;
-  service_id: string;
+  church_id?: string;
+  service_id?: string;
   servant_id: string;
   date: string;
   status: AttendanceStatus;
-  recorded_by: string;
+  recorded_by?: string;
   check_in_time?: string;
   method: 'manual' | 'qr_scan';
   notes?: string;
@@ -213,14 +213,14 @@ export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
 
 export interface Task {
   id: string;
-  church_id: string;
+  church_id?: string;
   service_id?: string;
   group_id?: string;
   title: string;
   title_ar?: string;
   description?: string;
   assigned_to: string; // Servant or User ID
-  created_by: string; // Leader or Admin ID
+  created_by?: string; // Leader or Admin ID
   priority: TaskPriority;
   status: TaskStatus;
   due_date: string;
@@ -235,7 +235,7 @@ export interface Task {
 
 export interface CalendarEvent {
   id: string;
-  church_id: string;
+  church_id?: string;
   service_id?: string;
   group_id?: string;
   title: string;
@@ -247,10 +247,10 @@ export interface CalendarEvent {
   end_time: string; // HH:MM
   location?: string;
   organizer?: string;
-  visibility?: 'all' | 'service_members' | 'servants_only' | 'leaders_only';
+  visibility?: 'all' | 'service_members' | 'servants_only' | 'leaders_only' | string;
   reminder?: string;
   attachments?: string[];
-  created_by: string;
+  created_by?: string;
   assigned_servant_ids?: string[];
   related_member_ids?: string[];
   created_at: string;
@@ -262,9 +262,9 @@ export type LessonSubmissionStatus = 'submitted' | 'late' | 'missing';
 
 export interface WeeklyLesson {
   id: string;
-  church_id: string;
+  church_id?: string;
   service_id?: string;
-  group_id: string;
+  group_id?: string;
   servant_id: string;
   title: string;
   lesson_date: string; // YYYY-MM-DD

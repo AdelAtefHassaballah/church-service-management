@@ -4,6 +4,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { storage } from '../lib/storage';
 import { calendarService } from '../services/calendarService';
+import { DEFAULT_CHURCH_ID } from '../lib/uuid';
 import { Modal } from '../components/common/Modal';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
@@ -170,7 +171,7 @@ export const CalendarPage: React.FC = () => {
     setStartTime(event.start_time || '08:00');
     setEndTime(event.end_time || '11:30');
     setLocation(event.location || '');
-    setVisibility(event.visibility || 'all');
+    setVisibility((event.visibility as any) || 'all');
     setOrganizer(event.organizer || '');
     setReminder(event.reminder || '');
     setDescription(event.description || '');
@@ -209,7 +210,7 @@ export const CalendarPage: React.FC = () => {
         });
       } else {
         await calendarService.create({
-          church_id: 'church-1',
+          church_id: DEFAULT_CHURCH_ID,
           service_id: serviceId || undefined,
           title,
           title_ar: titleAr || title,

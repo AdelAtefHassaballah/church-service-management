@@ -1,5 +1,7 @@
 import { QRCodeRecord, QRCodeEntityType, Member, UserProfile } from '../types';
 import { storage } from '../lib/storage';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { generateUUID, sanitizeUUID } from '../lib/uuid';
 
 export interface DecodedQREntity {
   entityType: QRCodeEntityType;
@@ -12,6 +14,35 @@ export interface DecodedQREntity {
 }
 
 export const qrService = {
+  fetchAll: async (): Promise<QRCodeRecord[]> => {
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('qr_codes')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!error && data) {
+          const mapped: QRCodeRecord[] = data.map((q: any) => ({
+            id: q.id,
+            entity_type: q.entity_type,
+            entity_id: q.entity_id,
+            token: q.token,
+            status: q.status || 'active',
+            service_ids: Array.isArray(q.service_ids) ? q.service_ids : [],
+            created_at: q.created_at || new Date().toISOString(),
+            last_scanned_at: q.last_scanned_at || undefined,
+          }));
+          mapped.forEach((q) => storage.saveQRCode(q));
+          return mapped;
+        }
+      } catch (err) {
+        console.warn('Supabase fetch qr_codes error:', err);
+      }
+    }
+    return storage.getQRCodes();
+  },
+
   getAll: (): QRCodeRecord[] => {
     return storage.getQRCodes();
   },
@@ -21,7 +52,7 @@ export const qrService = {
     const members = storage.getMembers();
     const servants = storage.getProfiles();
 
-    // Format: MEM-<id> or SRV-<id> or member:<id> or servant:<id> or raw ID
+    // Format: member:<id> or servant:<id> or MEM-<id> or SRV-<id> or raw ID
     let entityType: QRCodeEntityType = 'member';
     let entityId = '';
 
@@ -60,7 +91,7 @@ export const qrService = {
 
       const memberServices = member.service_ids && member.service_ids.length > 0
         ? member.service_ids
-        : ['srv-prep'];
+        : [];
 
       const isMismatch = currentServiceId && currentServiceId !== 'all'
         ? !memberServices.includes(currentServiceId)
@@ -80,7 +111,7 @@ export const qrService = {
 
       const servantServices = servant.service_ids && servant.service_ids.length > 0
         ? servant.service_ids
-        : ['srv-prep'];
+        : [];
 
       const isMismatch = currentServiceId && currentServiceId !== 'all'
         ? !servantServices.includes(currentServiceId)
@@ -120,33 +151,40 @@ export const qrService = {
       entityType = (entityIdOrType as QRCodeEntityType) || 'member';
     }
 
-    // Opaque token format: MEM-<id> or SRV-<id> (Zero PII)
-    const prefix = entityType === 'servant' ? 'SRV' : 'MEM';
-    const newToken = `${prefix}-${entityId}`;
+    // Token format: member:<id> or servant:<id>
+    const prefix = entityType === 'servant' ? 'servant' : 'member';
+    const newToken = `${prefix}:${entityId}`;
+    const newRecordId = generateUUID();
+
+    let serviceIds: string[] = [];
 
     if (entityType === 'member') {
       const member = storage.getMemberById(entityId);
       if (member) {
         member.qr_code = newToken;
+        serviceIds = member.service_ids || [];
         storage.saveMember(member);
       }
     } else {
       const servant = storage.getProfileById(entityId);
       if (servant) {
         servant.qr_code = newToken;
+        serviceIds = servant.service_ids || [];
         storage.saveProfile(servant);
       }
     }
 
-    storage.saveQRCode({
-      id: 'qr-' + entityId,
+    const qrRecord: QRCodeRecord = {
+      id: newRecordId,
       entity_type: entityType,
       entity_id: entityId,
       token: newToken,
       status: 'active',
-      service_ids: ['srv-prep'],
+      service_ids: serviceIds,
       created_at: new Date().toISOString(),
-    });
+    };
+
+    storage.saveQRCode(qrRecord);
 
     storage.logAction(
       'QR_REGENERATED',
@@ -154,6 +192,26 @@ export const qrService = {
       `Regenerated opaque QR badge for ${entityType} ID: ${entityId}`,
       entityId
     );
+
+    if (isSupabaseConfigured() && supabase) {
+      const sanitizedEntityId = sanitizeUUID(entityId);
+      if (sanitizedEntityId) {
+        supabase
+          .from('qr_codes')
+          .upsert({
+            id: qrRecord.id,
+            entity_type: qrRecord.entity_type,
+            entity_id: sanitizedEntityId,
+            token: qrRecord.token,
+            status: qrRecord.status,
+            service_ids: qrRecord.service_ids,
+            created_at: qrRecord.created_at,
+          }, { onConflict: 'token' })
+          .then(({ error }) => {
+            if (error) console.warn('Supabase qr_codes upsert error:', error.message);
+          });
+      }
+    }
 
     return newToken;
   },
@@ -165,6 +223,16 @@ export const qrService = {
       qr.status = 'disabled';
       storage.saveQRCode(qr);
       storage.logAction('QR_DISABLED', 'qr_code', `Disabled QR badge ${qr.token}`, qrId);
+
+      if (isSupabaseConfigured() && supabase && sanitizeUUID(qrId)) {
+        supabase
+          .from('qr_codes')
+          .update({ status: 'disabled' })
+          .eq('id', qrId)
+          .then(({ error }) => {
+            if (error) console.warn('Supabase qr_codes disable error:', error.message);
+          });
+      }
     }
   },
 
@@ -175,6 +243,16 @@ export const qrService = {
       qr.status = 'active';
       storage.saveQRCode(qr);
       storage.logAction('QR_ENABLED', 'qr_code', `Enabled QR badge ${qr.token}`, qrId);
+
+      if (isSupabaseConfigured() && supabase && sanitizeUUID(qrId)) {
+        supabase
+          .from('qr_codes')
+          .update({ status: 'active' })
+          .eq('id', qrId)
+          .then(({ error }) => {
+            if (error) console.warn('Supabase qr_codes enable error:', error.message);
+          });
+      }
     }
   }
 };

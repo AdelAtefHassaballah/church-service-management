@@ -1,6 +1,7 @@
 import { AttendanceRecord, AttendanceStatus, Member } from '../types';
 import { storage } from '../lib/storage';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { generateUUID, sanitizeUUID, DEFAULT_CHURCH_ID } from '../lib/uuid';
 
 export interface AbsentMemberSummary {
   member: Member;
@@ -20,8 +21,22 @@ export const attendanceService = {
           .select('*')
           .order('date', { ascending: false });
         if (!error && data) {
-          data.forEach((r: any) => storage.saveAttendanceRecord(r));
-          return data as AttendanceRecord[];
+          const mapped: AttendanceRecord[] = data.map((r: any) => ({
+            id: r.id,
+            church_id: sanitizeUUID(r.church_id) || DEFAULT_CHURCH_ID,
+            service_id: r.service_id,
+            group_id: r.group_id || undefined,
+            session_name: r.session_name || 'Regular Meeting',
+            member_id: r.member_id,
+            date: r.date,
+            status: r.status || 'present',
+            recorded_by: sanitizeUUID(r.recorded_by) || undefined,
+            notes: r.notes || undefined,
+            method: (r.method === 'qr_scan' ? 'qr_scan' : 'manual'),
+            created_at: r.created_at || new Date().toISOString(),
+          }));
+          mapped.forEach((r) => storage.saveAttendanceRecord(r));
+          return mapped;
         }
       } catch (err) {
         console.warn('Supabase attendance fetch error, fallback local:', err);
@@ -65,20 +80,22 @@ export const attendanceService = {
     groupId: string,
     date: string,
     status: AttendanceStatus,
-    recordedBy: string,
+    recordedBy?: string,
     method: 'manual' | 'qr_scan' = 'manual',
-    serviceId: string = 'srv-prep',
+    serviceId?: string,
     sessionName: string = 'Regular Meeting',
     notes?: string
   ): Promise<AttendanceRecord> => {
-    const existing = attendanceService.checkDuplicate(memberId, serviceId, date, sessionName);
+    const defaultSrv = storage.getServices()[0]?.id || DEFAULT_CHURCH_ID;
+    const finalServiceId = serviceId || defaultSrv;
+    const existing = attendanceService.checkDuplicate(memberId, finalServiceId, date, sessionName);
 
     const record: AttendanceRecord = {
-      id: existing ? existing.id : 'att-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
-      church_id: 'church-1',
-      service_id: serviceId,
+      id: existing ? existing.id : generateUUID(),
+      church_id: DEFAULT_CHURCH_ID,
+      service_id: finalServiceId,
       session_name: sessionName,
-      group_id: groupId,
+      group_id: groupId || undefined,
       member_id: memberId,
       date,
       status,
@@ -89,31 +106,42 @@ export const attendanceService = {
     };
 
     if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('attendance_records')
-          .upsert({
-            id: record.id,
-            church_id: record.church_id,
-            service_id: record.service_id,
-            session_name: record.session_name,
-            group_id: record.group_id,
-            member_id: record.member_id,
-            date: record.date,
-            status: record.status,
-            recorded_by: record.recorded_by,
-            method: record.method,
-            notes: record.notes,
-          })
-          .select()
-          .single();
+      const sanitizedMember = sanitizeUUID(memberId);
+      const sanitizedService = sanitizeUUID(finalServiceId);
+      const sanitizedRecordedBy = sanitizeUUID(recordedBy);
 
-        if (!error && data) {
-          storage.saveAttendanceRecord(data as AttendanceRecord);
-          return data as AttendanceRecord;
+      if (sanitizedMember && sanitizedService) {
+        try {
+          const { data, error } = await supabase
+            .from('attendance_records')
+            .upsert({
+              id: record.id,
+              church_id: DEFAULT_CHURCH_ID,
+              service_id: sanitizedService,
+              session_name: record.session_name,
+              group_id: record.group_id || null,
+              member_id: sanitizedMember,
+              date: record.date,
+              status: record.status,
+              recorded_by: sanitizedRecordedBy,
+              method: record.method,
+              notes: record.notes || null,
+              created_at: record.created_at,
+            }, { onConflict: 'member_id,service_id,date,session_name' })
+            .select()
+            .single();
+
+          if (!error && data) {
+            const saved: AttendanceRecord = {
+              ...record,
+              id: data.id,
+            };
+            storage.saveAttendanceRecord(saved);
+            return saved;
+          }
+        } catch (err) {
+          console.warn('Supabase attendance upsert error, fallback local:', err);
         }
-      } catch (err) {
-        console.warn('Supabase attendance upsert error, fallback local:', err);
       }
     }
 
@@ -123,32 +151,41 @@ export const attendanceService = {
 
   saveBulk: async (records: Omit<AttendanceRecord, 'id' | 'church_id' | 'created_at'>[]): Promise<void> => {
     const activeUser = storage.getActiveUser();
+    const defaultSrv = storage.getServices()[0]?.id || DEFAULT_CHURCH_ID;
+
     const formattedRecords: AttendanceRecord[] = records.map(r => ({
       ...r,
-      id: 'att-' + Date.now() + '-' + Math.floor(Math.random() * 10000),
-      church_id: 'church-1',
-      service_id: r.service_id || 'srv-prep',
+      id: generateUUID(),
+      church_id: DEFAULT_CHURCH_ID,
+      service_id: r.service_id || defaultSrv,
       session_name: r.session_name || 'Regular Meeting',
       created_at: new Date().toISOString(),
     }));
 
     if (isSupabaseConfigured() && supabase) {
       try {
-        await supabase.from('attendance_records').upsert(
-          formattedRecords.map(r => ({
+        const payload = formattedRecords
+          .filter(r => sanitizeUUID(r.member_id) && sanitizeUUID(r.service_id))
+          .map(r => ({
             id: r.id,
-            church_id: r.church_id,
-            service_id: r.service_id,
-            session_name: r.session_name,
-            group_id: r.group_id,
-            member_id: r.member_id,
+            church_id: DEFAULT_CHURCH_ID,
+            service_id: sanitizeUUID(r.service_id)!,
+            session_name: r.session_name || 'Regular Meeting',
+            group_id: r.group_id || null,
+            member_id: sanitizeUUID(r.member_id)!,
             date: r.date,
             status: r.status,
-            recorded_by: r.recorded_by,
+            recorded_by: sanitizeUUID(r.recorded_by),
             method: r.method,
-            notes: r.notes
-          }))
-        );
+            notes: r.notes || null,
+            created_at: r.created_at,
+          }));
+
+        if (payload.length > 0) {
+          await supabase.from('attendance_records').upsert(payload, {
+            onConflict: 'member_id,service_id,date,session_name',
+          });
+        }
       } catch (err) {
         console.warn('Supabase bulk attendance upsert error:', err);
       }

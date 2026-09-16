@@ -118,7 +118,7 @@ export const ManualAttendanceSheet: React.FC<ManualAttendanceSheetProps> = ({
         date: selectedDate,
         status: item.status,
         notes: item.notes,
-        recorded_by: user?.id || 'usr-servant-1',
+        recorded_by: user?.id,
         method: 'manual' as const,
       };
     });

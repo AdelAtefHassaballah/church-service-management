@@ -1,37 +1,58 @@
 import { ChurchService, ServiceType, Member, UserProfile, MemberServantAssignment } from '../types';
 import { storage } from '../lib/storage';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { generateUUID, sanitizeUUID, DEFAULT_CHURCH_ID } from '../lib/uuid';
 
 export const serviceService = {
   fetchAll: async (): Promise<ChurchService[]> => {
     if (isSupabaseConfigured() && supabase) {
       try {
-        const { data, error } = await supabase
-          .from('services')
-          .select('*')
-          .order('name', { ascending: true });
+        const [servicesRes, leadersRes, servantsRes, membersRes] = await Promise.allSettled([
+          supabase.from('services').select('*').order('name', { ascending: true }),
+          supabase.from('service_leaders').select('*'),
+          supabase.from('service_servants').select('*'),
+          supabase.from('service_members').select('*'),
+        ]);
 
-        if (!error && data) {
-          const mapped: ChurchService[] = data.map((row: any) => ({
-            id: row.id,
-            church_id: row.church_id || 'church-1',
-            name: row.name,
-            name_ar: row.name_ar,
-            description: row.description || undefined,
-            description_ar: row.description_ar || undefined,
-            service_type: row.service_type || 'preparatory',
-            location: row.location || undefined,
-            day_of_week: row.day_of_week || undefined,
-            start_time: row.start_time || undefined,
-            end_time: row.end_time || undefined,
-            leader_ids: [],
-            servant_ids: [],
-            member_ids: [],
-            status: row.status || 'active',
-            color: row.color || '#026bc7',
-            notes: row.notes || undefined,
-            created_at: row.created_at || new Date().toISOString(),
-          }));
+        if (servicesRes.status === 'fulfilled' && !servicesRes.value.error && servicesRes.value.data) {
+          const leadersData = leadersRes.status === 'fulfilled' && !leadersRes.value.error ? (leadersRes.value.data || []) : [];
+          const servantsData = servantsRes.status === 'fulfilled' && !servantsRes.value.error ? (servantsRes.value.data || []) : [];
+          const membersData = membersRes.status === 'fulfilled' && !membersRes.value.error ? (membersRes.value.data || []) : [];
+
+          const mapped: ChurchService[] = servicesRes.value.data.map((row: any) => {
+            const srvId = row.id;
+            const leaderIds = leadersData
+              .filter((l: any) => l.service_id === srvId)
+              .map((l: any) => l.leader_id);
+            const servantIds = servantsData
+              .filter((s: any) => s.service_id === srvId)
+              .map((s: any) => s.servant_id);
+            const memberIds = membersData
+              .filter((m: any) => m.service_id === srvId)
+              .map((m: any) => m.member_id);
+
+            return {
+              id: srvId,
+              church_id: sanitizeUUID(row.church_id) || DEFAULT_CHURCH_ID,
+              name: row.name,
+              name_ar: row.name_ar,
+              description: row.description || undefined,
+              description_ar: row.description_ar || undefined,
+              service_type: row.service_type || 'preparatory',
+              location: row.location || undefined,
+              day_of_week: row.day_of_week || undefined,
+              start_time: row.start_time || undefined,
+              end_time: row.end_time || undefined,
+              leader_ids: leaderIds,
+              servant_ids: servantIds,
+              member_ids: memberIds,
+              status: row.status || 'active',
+              color: row.color || '#2563eb',
+              notes: row.notes || undefined,
+              created_at: row.created_at || new Date().toISOString(),
+            };
+          });
+
           storage.saveServices(mapped);
           return mapped;
         }
@@ -67,16 +88,16 @@ export const serviceService = {
     color?: string;
     notes?: string;
   }): ChurchService => {
-    const newId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'srv-' + Date.now();
+    const newId = generateUUID();
     const newService: ChurchService = {
       ...data,
       id: newId,
-      church_id: 'church-1',
+      church_id: DEFAULT_CHURCH_ID,
       leader_ids: data.leader_ids || [],
       servant_ids: data.servant_ids || [],
       member_ids: data.member_ids || [],
       status: data.status || 'active',
-      color: data.color || '#026bc7',
+      color: data.color || '#2563eb',
       created_at: new Date().toISOString(),
     };
 
@@ -93,6 +114,7 @@ export const serviceService = {
         .from('services')
         .insert({
           id: newService.id,
+          church_id: sanitizeUUID(newService.church_id),
           name: newService.name,
           name_ar: newService.name_ar,
           description: newService.description || null,
@@ -107,8 +129,39 @@ export const serviceService = {
           notes: newService.notes || null,
           created_at: newService.created_at,
         })
-        .then(({ error }) => {
-          if (error) console.warn('Remote Supabase service insert error:', error.message);
+        .then(async ({ error }) => {
+          if (error) {
+            console.warn('Remote Supabase service insert error:', error.message);
+            return;
+          }
+          const client = supabase;
+          if (!client) return;
+
+          // Populate junction tables
+          if (newService.leader_ids.length > 0) {
+            const leaderInserts = newService.leader_ids
+              .filter(lid => sanitizeUUID(lid))
+              .map(lid => ({ service_id: newService.id, leader_id: lid }));
+            if (leaderInserts.length > 0) {
+              await client.from('service_leaders').insert(leaderInserts);
+            }
+          }
+          if (newService.servant_ids.length > 0) {
+            const servantInserts = newService.servant_ids
+              .filter(sid => sanitizeUUID(sid))
+              .map(sid => ({ service_id: newService.id, servant_id: sid }));
+            if (servantInserts.length > 0) {
+              await client.from('service_servants').insert(servantInserts);
+            }
+          }
+          if (newService.member_ids.length > 0) {
+            const memberInserts = newService.member_ids
+              .filter(mid => sanitizeUUID(mid))
+              .map(mid => ({ service_id: newService.id, member_id: mid }));
+            if (memberInserts.length > 0) {
+              await client.from('service_members').insert(memberInserts);
+            }
+          }
         });
     }
 
@@ -127,7 +180,7 @@ export const serviceService = {
     storage.saveService(updated);
     storage.logAction('SERVICE_UPDATED', 'service', `Updated details for service "${updated.name}"`, id);
 
-    if (isSupabaseConfigured() && supabase) {
+    if (isSupabaseConfigured() && supabase && sanitizeUUID(id)) {
       supabase
         .from('services')
         .update({
@@ -177,6 +230,23 @@ export const serviceService = {
       `Updated servant assignments for "${service.name}" (${servantIds.length} servants)`,
       serviceId
     );
+
+    if (isSupabaseConfigured() && supabase && sanitizeUUID(serviceId)) {
+      (async () => {
+        try {
+          await supabase.from('service_servants').delete().eq('service_id', serviceId);
+          const inserts = servantIds.filter(sid => sanitizeUUID(sid)).map(sid => ({
+            service_id: serviceId,
+            servant_id: sid,
+          }));
+          if (inserts.length > 0) {
+            await supabase.from('service_servants').insert(inserts);
+          }
+        } catch (err) {
+          console.warn('Supabase assignServants sync error:', err);
+        }
+      })();
+    }
   },
 
   assignServant: (serviceId: string, servantId: string): void => {
@@ -194,6 +264,17 @@ export const serviceService = {
         storage.saveProfile(profile);
       }
     }
+
+    if (isSupabaseConfigured() && supabase && sanitizeUUID(serviceId) && sanitizeUUID(servantId)) {
+      supabase
+        .from('service_servants')
+        .insert({ service_id: serviceId, servant_id: servantId })
+        .then(({ error }) => {
+          if (error && !error.message?.includes('duplicate')) {
+            console.warn('Supabase service_servants insert error:', error.message);
+          }
+        });
+    }
   },
 
   removeServant: (serviceId: string, servantId: string): void => {
@@ -206,6 +287,17 @@ export const serviceService = {
     if (profile) {
       profile.service_ids = (profile.service_ids || []).filter(id => id !== serviceId);
       storage.saveProfile(profile);
+    }
+
+    if (isSupabaseConfigured() && supabase && sanitizeUUID(serviceId) && sanitizeUUID(servantId)) {
+      supabase
+        .from('service_servants')
+        .delete()
+        .eq('service_id', serviceId)
+        .eq('servant_id', servantId)
+        .then(({ error }) => {
+          if (error) console.warn('Supabase service_servants delete error:', error.message);
+        });
     }
   },
 
@@ -233,6 +325,23 @@ export const serviceService = {
       `Updated member enrollment for "${service.name}" (${memberIds.length} members)`,
       serviceId
     );
+
+    if (isSupabaseConfigured() && supabase && sanitizeUUID(serviceId)) {
+      (async () => {
+        try {
+          await supabase.from('service_members').delete().eq('service_id', serviceId);
+          const inserts = memberIds.filter(mid => sanitizeUUID(mid)).map(mid => ({
+            service_id: serviceId,
+            member_id: mid,
+          }));
+          if (inserts.length > 0) {
+            await supabase.from('service_members').insert(inserts);
+          }
+        } catch (err) {
+          console.warn('Supabase assignMembers sync error:', err);
+        }
+      })();
+    }
   },
 
   assignMember: (serviceId: string, memberId: string): void => {
@@ -250,6 +359,17 @@ export const serviceService = {
         storage.saveMember(member);
       }
     }
+
+    if (isSupabaseConfigured() && supabase && sanitizeUUID(serviceId) && sanitizeUUID(memberId)) {
+      supabase
+        .from('service_members')
+        .insert({ service_id: serviceId, member_id: memberId })
+        .then(({ error }) => {
+          if (error && !error.message?.includes('duplicate')) {
+            console.warn('Supabase service_members insert error:', error.message);
+          }
+        });
+    }
   },
 
   removeMember: (serviceId: string, memberId: string): void => {
@@ -263,12 +383,23 @@ export const serviceService = {
       member.service_ids = (member.service_ids || []).filter(id => id !== serviceId);
       storage.saveMember(member);
     }
+
+    if (isSupabaseConfigured() && supabase && sanitizeUUID(serviceId) && sanitizeUUID(memberId)) {
+      supabase
+        .from('service_members')
+        .delete()
+        .eq('service_id', serviceId)
+        .eq('member_id', memberId)
+        .then(({ error }) => {
+          if (error) console.warn('Supabase service_members delete error:', error.message);
+        });
+    }
   },
 
   getMemberServantAssignments: (serviceId: string): MemberServantAssignment[] => {
     const allMembers = storage.getMembers().filter(m => m.service_ids?.includes(serviceId) && m.assigned_servant_id);
     return allMembers.map(m => ({
-      id: `msa-${m.id}-${m.assigned_servant_id}`,
+      id: generateUUID(),
       service_id: serviceId,
       servant_id: m.assigned_servant_id!,
       member_id: m.id,
@@ -294,6 +425,41 @@ export const serviceService = {
       `Assigned member ${member.full_name} to servant ${servant?.name || servantId} in service ${serviceId}`,
       memberId
     );
+
+    if (isSupabaseConfigured() && supabase) {
+      const sanitizedSrv = sanitizeUUID(serviceId);
+      const sanitizedServant = sanitizeUUID(servantId);
+      const sanitizedMember = sanitizeUUID(memberId);
+
+      // Update member's assigned servant
+      if (sanitizedMember) {
+        supabase
+          .from('members')
+          .update({
+            assigned_servant_id: sanitizedServant,
+            service_ids: member.service_ids,
+          })
+          .eq('id', sanitizedMember)
+          .then(({ error }) => {
+            if (error) console.warn('Supabase member assigned_servant_id update error:', error.message);
+          });
+      }
+
+      // Upsert into member_servant_assignments
+      if (sanitizedSrv && sanitizedServant && sanitizedMember) {
+        supabase
+          .from('member_servant_assignments')
+          .upsert({
+            service_id: sanitizedSrv,
+            servant_id: sanitizedServant,
+            member_id: sanitizedMember,
+            created_at: new Date().toISOString(),
+          }, { onConflict: 'service_id,servant_id,member_id' })
+          .then(({ error }) => {
+            if (error) console.warn('Supabase member_servant_assignments upsert error:', error.message);
+          });
+      }
+    }
   },
 
   removeMemberServantAssignment: (serviceId: string, servantId: string, memberId: string): void => {
@@ -304,16 +470,44 @@ export const serviceService = {
       member.assigned_servant_id = undefined;
       storage.saveMember(member);
     }
+
+    if (isSupabaseConfigured() && supabase) {
+      const sanitizedSrv = sanitizeUUID(serviceId);
+      const sanitizedServant = sanitizeUUID(servantId);
+      const sanitizedMember = sanitizeUUID(memberId);
+
+      if (sanitizedMember) {
+        supabase
+          .from('members')
+          .update({ assigned_servant_id: null })
+          .eq('id', sanitizedMember)
+          .then(({ error }) => {
+            if (error) console.warn('Supabase remove assignment from member error:', error.message);
+          });
+      }
+
+      if (sanitizedSrv && sanitizedServant && sanitizedMember) {
+        supabase
+          .from('member_servant_assignments')
+          .delete()
+          .eq('service_id', sanitizedSrv)
+          .eq('servant_id', sanitizedServant)
+          .eq('member_id', sanitizedMember)
+          .then(({ error }) => {
+            if (error) console.warn('Supabase member_servant_assignments delete error:', error.message);
+          });
+      }
+    }
   },
 
   getServiceStats: (serviceId: string) => {
     const service = storage.getServiceById(serviceId);
     const allMembers = storage.getMembers();
     const allServants = storage.getProfiles();
-    const allAttendance = storage.getAttendance().filter(a => a.service_id === serviceId || (!a.service_id && serviceId === 'srv-prep'));
-    const allLessons = storage.getLessons().filter(l => l.service_id === serviceId || (!l.service_id && serviceId === 'srv-prep'));
-    const allTasks = storage.getTasks().filter(t => t.service_id === serviceId || (!t.service_id && serviceId === 'srv-prep'));
-    const allEvents = storage.getEvents().filter(e => e.service_id === serviceId || (!e.service_id && serviceId === 'srv-prep'));
+    const allAttendance = storage.getAttendance().filter(a => a.service_id === serviceId);
+    const allLessons = storage.getLessons().filter(l => l.service_id === serviceId);
+    const allTasks = storage.getTasks().filter(t => t.service_id === serviceId);
+    const allEvents = storage.getEvents().filter(e => e.service_id === serviceId);
 
     const serviceMembers = allMembers.filter(m => service?.member_ids.includes(m.id) || (m.service_ids || []).includes(serviceId));
     const serviceServants = allServants.filter(s => service?.servant_ids.includes(s.id) || (s.service_ids || []).includes(serviceId));

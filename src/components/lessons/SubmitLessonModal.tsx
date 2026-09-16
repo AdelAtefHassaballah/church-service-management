@@ -55,7 +55,7 @@ export const SubmitLessonModal: React.FC<SubmitLessonModalProps> = ({
     if (initialLesson) {
       setTitle(initialLesson.title);
       setLessonDate(initialLesson.lesson_date);
-      setGroupId(initialLesson.group_id);
+      setGroupId(initialLesson.group_id || '');
       setBibleReference(initialLesson.bible_reference || '');
       setDescription(initialLesson.description || '');
       setAttachments(initialLesson.attachments || []);
@@ -114,14 +114,15 @@ export const SubmitLessonModal: React.FC<SubmitLessonModalProps> = ({
 
     try {
       await lessonService.submitLesson(
-        user?.id || 'usr-servant-1',
+        user?.id || '00000000-0000-0000-0000-000000000000',
         groupId || groups[0]?.id || 'group-1',
         title,
         lessonDate,
         description,
         bibleReference,
         attachments,
-        initialLesson?.id
+        initialLesson?.id,
+        serviceId || services[0]?.id
       );
 
       confetti({ particleCount: 60, spread: 70, origin: { y: 0.7 } });

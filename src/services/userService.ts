@@ -2,6 +2,7 @@ import { UserProfile, Role, Permission, UserStatus } from '../types';
 import { storage } from '../lib/storage';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { DEFAULT_ROLE_PERMISSIONS } from '../lib/permissions';
+import { generateUUID, sanitizeUUID, DEFAULT_CHURCH_ID } from '../lib/uuid';
 
 const getAll = (): UserProfile[] => {
   return storage.getProfiles();
@@ -47,11 +48,10 @@ const createServant = async (data: {
   status?: UserStatus;
   church_id?: string;
 }): Promise<UserProfile> => {
-  const isUUID = (str?: string) => Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
-  const newId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : '00000000-0000-0000-0000-' + Date.now().toString().slice(-12).padStart(12, '0');
+  const newId = generateUUID();
   const targetRole = data.role || 'servant';
   const initialPerms = data.permissions || DEFAULT_ROLE_PERMISSIONS[targetRole] || DEFAULT_ROLE_PERMISSIONS.servant;
-  const churchId = isUUID(data.church_id) ? data.church_id! : null;
+  const churchId = sanitizeUUID(data.church_id) || DEFAULT_CHURCH_ID;
 
   const newProfile: UserProfile = {
     id: newId,
