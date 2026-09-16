@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Role, UserStatus, Permission, ChurchService } from '../../types';
 import { userService } from '../../services/userService';
 import { serviceService } from '../../services/serviceService';
+import { storage } from '../../lib/storage';
 import { DEFAULT_ROLE_PERMISSIONS } from '../../lib/permissions';
 import { Button } from '../common/Button';
 import { 
@@ -47,11 +48,19 @@ export const AddServantModal: React.FC<AddServantModalProps> = ({
   const [address, setAddress] = useState('');
   const [bio, setBio] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
-  const [selectedServices, setSelectedServices] = useState<string[]>(['srv-prep']);
+  const [selectedServices, setSelectedServices] = useState<string[]>(() => {
+    return services.length > 0 ? [services[0].id] : [];
+  });
   const [role, setRole] = useState<Role>('servant');
   const [status, setStatus] = useState<UserStatus>('active');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (services.length > 0 && selectedServices.length === 0) {
+      setSelectedServices([services[0].id]);
+    }
+  }, [services]);
 
   if (!isOpen) return null;
 
@@ -59,7 +68,7 @@ export const AddServantModal: React.FC<AddServantModalProps> = ({
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 2 * 1024 * 1024) {
-        setError('Image must be under 2MB');
+        setError(language === 'ar' ? 'حجم الصورة يجب ألا يتجاوز 2 ميجابايت' : 'Image must be under 2MB');
         return;
       }
       const reader = new FileReader();
@@ -84,8 +93,49 @@ export const AddServantModal: React.FC<AddServantModalProps> = ({
     e.preventDefault();
     setError(null);
 
-    if (!name.trim() || !email.trim()) {
-      setError(t('common.required'));
+    // 1. Validate English Name
+    const cleanName = name.trim();
+    if (!cleanName) {
+      setError(language === 'ar' ? 'يرجى إدخال اسم الخادم بالإنجليزية' : 'Please enter full name (English)');
+      return;
+    }
+
+    // 2. Validate Arabic Name
+    const cleanNameAr = nameAr.trim();
+    if (!cleanNameAr) {
+      setError(language === 'ar' ? 'يرجى إدخال اسم الخادم باللغة العربية' : 'Please enter Arabic name');
+      return;
+    }
+
+    // 3. Validate Email
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) {
+      setError(language === 'ar' ? 'يرجى إدخال البريد الإلكتروني' : 'Please enter email address');
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      setError(language === 'ar' ? 'صيغة البريد الإلكتروني غير صحيحة' : 'Please enter a valid email address');
+      return;
+    }
+
+    // 4. Duplicate Email check (Local cache)
+    const existingProfiles = storage.getProfiles();
+    if (existingProfiles.some(p => p.email.toLowerCase() === cleanEmail)) {
+      setError(language === 'ar' ? 'يوجد خادم مسجل بهذا البريد الإلكتروني بالفعل' : 'A user with this email already exists');
+      return;
+    }
+
+    // 5. Validate Phone (if provided)
+    const cleanPhone = phone.trim();
+    if (cleanPhone && !/^[+0-9\s\-()]{7,20}$/.test(cleanPhone)) {
+      setError(language === 'ar' ? 'رقم الهاتف غير صحيح (أرقام فقط)' : 'Invalid phone number format');
+      return;
+    }
+
+    // 6. Validate Service Selection
+    if (selectedServices.length === 0) {
+      setError(language === 'ar' ? 'يرجى اختيار خدمة واحدة على الأقل' : 'Please select at least one church service');
       return;
     }
 
@@ -94,11 +144,11 @@ export const AddServantModal: React.FC<AddServantModalProps> = ({
       const initialPermissions: Permission[] = DEFAULT_ROLE_PERMISSIONS[role] || DEFAULT_ROLE_PERMISSIONS.servant;
 
       const newServant = await userService.create({
-        name: name.trim(),
-        name_ar: nameAr.trim() || name.trim(),
-        email: email.trim().toLowerCase(),
-        phone: phone.trim(),
-        whatsapp: whatsapp.trim() || phone.trim(),
+        name: cleanName,
+        name_ar: cleanNameAr,
+        email: cleanEmail,
+        phone: cleanPhone || '+201000000000',
+        whatsapp: whatsapp.trim() || cleanPhone || '+201000000000',
         date_of_birth: dateOfBirth || undefined,
         gender,
         address: address.trim() || undefined,

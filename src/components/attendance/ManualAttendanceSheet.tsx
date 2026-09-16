@@ -46,7 +46,7 @@ export const ManualAttendanceSheet: React.FC<ManualAttendanceSheetProps> = ({
   const services = storage.getServices();
   const groups = storage.getGroups();
 
-  const [selectedServiceId, setSelectedServiceId] = useState(initialServiceId || services[0]?.id || 'srv-prep');
+  const [selectedServiceId, setSelectedServiceId] = useState(initialServiceId || services[0]?.id || '');
   const [selectedSessionName, setSelectedSessionName] = useState(SESSIONS[0].id);
   const [selectedGroupId, setSelectedGroupId] = useState(initialGroupId || 'all');
   const [selectedDate, setSelectedDate] = useState(initialDate || new Date().toISOString().split('T')[0]);

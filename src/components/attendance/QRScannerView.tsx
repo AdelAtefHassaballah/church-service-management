@@ -51,7 +51,7 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({ onScanSuccess }) =
   const members = storage.getMembers();
   const users = storage.getProfiles();
 
-  const [selectedServiceId, setSelectedServiceId] = useState<string>(services[0]?.id || 'srv-prep');
+  const [selectedServiceId, setSelectedServiceId] = useState<string>(services[0]?.id || '');
   const [selectedSessionName, setSelectedSessionName] = useState<string>(SESSIONS[0].id);
   const [isScanning, setIsScanning] = useState(false);
   const [lastScanned, setLastScanned] = useState<{

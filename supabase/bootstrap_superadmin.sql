@@ -65,7 +65,7 @@ WHERE email IN ('adelgerges@church.org', 'omar@church.org');
 -- ------------------------------------------------------------------------
 DO $$
 DECLARE
-  super_admin_id UUID := uuid_generate_v4();
+  super_admin_id UUID := gen_random_uuid();
   super_admin_email TEXT := 'adelgerges@church.org';
   super_admin_password TEXT := 'AdelGerges'; -- CHANGE AFTER FIRST LOGIN
   super_admin_name TEXT := 'Adel Gerges';
@@ -97,7 +97,7 @@ BEGIN
 
   INSERT INTO auth.identities (id, user_id, provider_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
   VALUES (
-    uuid_generate_v4(), super_admin_id, super_admin_id::text,
+    gen_random_uuid(), super_admin_id, super_admin_id::text,
     jsonb_build_object('sub', super_admin_id::text, 'email', super_admin_email),
     'email', NOW(), NOW(), NOW()
   )
@@ -136,7 +136,7 @@ END $$;
 -- ------------------------------------------------------------------------
 DO $$
 DECLARE
-  super_admin_id UUID := uuid_generate_v4();
+  super_admin_id UUID := gen_random_uuid();
   super_admin_email TEXT := 'omar@church.org';
   super_admin_password TEXT := 'Omar#Church2026';
   super_admin_name TEXT := 'Omar';
@@ -168,7 +168,7 @@ BEGIN
 
   INSERT INTO auth.identities (id, user_id, provider_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
   VALUES (
-    uuid_generate_v4(), super_admin_id, super_admin_id::text,
+    gen_random_uuid(), super_admin_id, super_admin_id::text,
     jsonb_build_object('sub', super_admin_id::text, 'email', super_admin_email),
     'email', NOW(), NOW(), NOW()
   )

@@ -11,7 +11,7 @@ Baseline organizational unit.
 
 | Column | PostgreSQL Type | Constraints | Application Field | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| `id` | UUID | PRIMARY KEY, DEFAULT `uuid_generate_v4()` | `id: string` | Baseline seed: `00000000-0000-0000-0000-000000000001` |
+| `id` | UUID | PRIMARY KEY, DEFAULT `gen_random_uuid()` | `id: string` | Baseline seed: `00000000-0000-0000-0000-000000000001` |
 | `name` | TEXT | NOT NULL | `name: string` | English church name |
 | `name_ar` | TEXT | NOT NULL | `name_ar: string` | Arabic church name |
 | `location` | TEXT | NULL | `location?: string` | Physical address / Diocese |
@@ -27,7 +27,7 @@ Church services, ministry stages (e.g., Preparatory, Youth, Sunday School).
 
 | Column | PostgreSQL Type | Constraints | Application Field | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| `id` | UUID | PRIMARY KEY, DEFAULT `uuid_generate_v4()` | `id: string` | Service unique UUID |
+| `id` | UUID | PRIMARY KEY, DEFAULT `gen_random_uuid()` | `id: string` | Service unique UUID |
 | `church_id` | UUID | NULL, FK → `churches(id)` ON DELETE CASCADE | `church_id?: string` | Associated church UUID |
 | `name` | TEXT | NOT NULL | `name: string` | Service name (EN) |
 | `name_ar` | TEXT | NOT NULL | `name_ar: string` | Service name (AR) |
@@ -94,7 +94,7 @@ Pastoral care assignments linking a servant to a member within a service.
 
 | Column | PostgreSQL Type | Constraints | Application Field | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| `id` | UUID | PRIMARY KEY, DEFAULT `uuid_generate_v4()` | `id: string` | Unique assignment UUID |
+| `id` | UUID | PRIMARY KEY, DEFAULT `gen_random_uuid()` | `id: string` | Unique assignment UUID |
 | `service_id` | UUID | FK → `services(id)` ON DELETE CASCADE | `service_id: string` | Service context |
 | `servant_id` | UUID | FK → `profiles(id)` ON DELETE CASCADE | `servant_id: string` | Assigned servant profile ID |
 | `member_id` | UUID | FK → `members(id)` ON DELETE CASCADE | `member_id: string` | Assigned member ID |
@@ -133,7 +133,7 @@ Extends `auth.users` with user roles, contact information, permissions, and stat
 | `service_ids` | TEXT[] | DEFAULT `'{}'::text[]` | `service_ids: string[]` | Array of service UUID strings |
 | `permissions` | TEXT[] | DEFAULT `'{}'::text[]` | `permissions: Permission[]` | Granular action permissions |
 | `status` | TEXT | NOT NULL, DEFAULT `'active'` | `status: UserStatus` | `'active'`, `'disabled'`, `'pending'` |
-| `qr_code` | TEXT | UNIQUE, NOT NULL, DEFAULT `'servant:' \|\| uuid_generate_v4()` | `qr_code: string` | QR token |
+| `qr_code` | TEXT | UNIQUE, NOT NULL, DEFAULT `'servant:' \|\| gen_random_uuid()` | `qr_code: string` | QR token |
 | `created_at` | TIMESTAMPTZ | NOT NULL, DEFAULT `now()` | `created_at: string` | Creation timestamp |
 | `updated_at` | TIMESTAMPTZ | NOT NULL, DEFAULT `now()` | `updated_at?: string` | Update timestamp |
 
@@ -152,7 +152,7 @@ Church members and youth attendees.
 
 | Column | PostgreSQL Type | Constraints | Application Field | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| `id` | UUID | PRIMARY KEY, DEFAULT `uuid_generate_v4()` | `id: string` | Member unique UUID |
+| `id` | UUID | PRIMARY KEY, DEFAULT `gen_random_uuid()` | `id: string` | Member unique UUID |
 | `church_id` | UUID | NULL, FK → `churches(id)` ON DELETE CASCADE | `church_id?: string` | Church UUID |
 | `service_ids` | TEXT[] | DEFAULT `'{}'::text[]` | `service_ids: string[]` | Enrolled service UUIDs |
 | `group_id` | TEXT | NULL | `group_id?: string` | Service stage group identifier |
@@ -173,7 +173,7 @@ Church members and youth attendees.
 | `assigned_servant_id` | UUID | NULL, FK → `profiles(id)` ON DELETE SET NULL | `assigned_servant_id?: string` | Primary pastoral servant |
 | `status` | `member_status` | NOT NULL, DEFAULT `'active'` | `status: MemberStatus` | Enum: `'active'`, `'inactive'`, `'archived'` |
 | `notes` | TEXT | NULL | `notes?: string` | General remarks |
-| `qr_code` | TEXT | UNIQUE, NOT NULL, DEFAULT `'member:' \|\| uuid_generate_v4()` | `qr_code: string` | QR check-in token |
+| `qr_code` | TEXT | UNIQUE, NOT NULL, DEFAULT `'member:' \|\| gen_random_uuid()` | `qr_code: string` | QR check-in token |
 | `created_at` | TIMESTAMPTZ | NOT NULL, DEFAULT `now()` | `created_at: string` | Creation timestamp |
 | `updated_at` | TIMESTAMPTZ | NOT NULL, DEFAULT `now()` | `updated_at?: string` | Update timestamp |
 
@@ -191,7 +191,7 @@ Care history and pastoral visitation notes for members.
 
 | Column | PostgreSQL Type | Constraints | Application Field | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| `id` | UUID | PRIMARY KEY, DEFAULT `uuid_generate_v4()` | `id: string` | Note unique UUID |
+| `id` | UUID | PRIMARY KEY, DEFAULT `gen_random_uuid()` | `id: string` | Note unique UUID |
 | `member_id` | UUID | NOT NULL, FK → `members(id)` ON DELETE CASCADE | `member_id: string` | Target member UUID |
 | `author_id` | UUID | NOT NULL, FK → `profiles(id)` ON DELETE CASCADE | `author_id: string` | Servant author profile UUID |
 | `content` | TEXT | NOT NULL | `content: string` | Note content |
@@ -213,7 +213,7 @@ Member meeting and service attendance records.
 
 | Column | PostgreSQL Type | Constraints | Application Field | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| `id` | UUID | PRIMARY KEY, DEFAULT `uuid_generate_v4()` | `id: string` | Record unique UUID |
+| `id` | UUID | PRIMARY KEY, DEFAULT `gen_random_uuid()` | `id: string` | Record unique UUID |
 | `church_id` | UUID | NULL, FK → `churches(id)` ON DELETE CASCADE | `church_id?: string` | Church UUID |
 | `service_id` | UUID | NOT NULL, FK → `services(id)` ON DELETE CASCADE | `service_id: string` | Service UUID |
 | `group_id` | TEXT | NULL | `group_id?: string` | Service group |
@@ -240,7 +240,7 @@ Servant attendance and check-in times per service meeting.
 
 | Column | PostgreSQL Type | Constraints | Application Field | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| `id` | UUID | PRIMARY KEY, DEFAULT `uuid_generate_v4()` | `id: string` | Record unique UUID |
+| `id` | UUID | PRIMARY KEY, DEFAULT `gen_random_uuid()` | `id: string` | Record unique UUID |
 | `church_id` | UUID | NULL, FK → `churches(id)` ON DELETE CASCADE | `church_id?: string` | Church UUID |
 | `service_id` | UUID | NULL, FK → `services(id)` ON DELETE CASCADE | `service_id?: string` | Service UUID |
 | `servant_id` | UUID | NULL, FK → `profiles(id)` ON DELETE CASCADE | `servant_id: string` | Servant Profile UUID |
@@ -268,7 +268,7 @@ Pastoral tasks, visitation assignments, and ministry follow-ups.
 
 | Column | PostgreSQL Type | Constraints | Application Field | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| `id` | UUID | PRIMARY KEY, DEFAULT `uuid_generate_v4()` | `id: string` | Task unique UUID |
+| `id` | UUID | PRIMARY KEY, DEFAULT `gen_random_uuid()` | `id: string` | Task unique UUID |
 | `church_id` | UUID | NULL, FK → `churches(id)` ON DELETE CASCADE | `church_id?: string` | Church UUID |
 | `service_id` | UUID | NULL, FK → `services(id)` ON DELETE SET NULL | `service_id?: string` | Service UUID |
 | `group_id` | TEXT | NULL | `group_id?: string` | Service stage group |
@@ -300,7 +300,7 @@ Weekly Sunday School and youth lesson preparation submissions.
 
 | Column | PostgreSQL Type | Constraints | Application Field | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| `id` | UUID | PRIMARY KEY, DEFAULT `uuid_generate_v4()` | `id: string` | Lesson unique UUID |
+| `id` | UUID | PRIMARY KEY, DEFAULT `gen_random_uuid()` | `id: string` | Lesson unique UUID |
 | `church_id` | UUID | NULL, FK → `churches(id)` ON DELETE CASCADE | `church_id?: string` | Church UUID |
 | `service_id` | UUID | NULL, FK → `services(id)` ON DELETE SET NULL | `service_id?: string` | Service UUID |
 | `group_id` | TEXT | NULL | `group_id?: string` | Group identifier |
@@ -328,7 +328,7 @@ Church service events, liturgical dates, and pastoral activities.
 
 | Column | PostgreSQL Type | Constraints | Application Field | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| `id` | UUID | PRIMARY KEY, DEFAULT `uuid_generate_v4()` | `id: string` | Event unique UUID |
+| `id` | UUID | PRIMARY KEY, DEFAULT `gen_random_uuid()` | `id: string` | Event unique UUID |
 | `church_id` | UUID | NULL, FK → `churches(id)` ON DELETE CASCADE | `church_id?: string` | Church UUID |
 | `service_id` | UUID | NULL, FK → `services(id)` ON DELETE SET NULL | `service_id?: string` | Service UUID |
 | `group_id` | TEXT | NULL | `group_id?: string` | Stage group |
@@ -364,7 +364,7 @@ Opaque QR identification tokens (Zero PII).
 
 | Column | PostgreSQL Type | Constraints | Application Field | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| `id` | UUID | PRIMARY KEY, DEFAULT `uuid_generate_v4()` | `id: string` | QR unique UUID |
+| `id` | UUID | PRIMARY KEY, DEFAULT `gen_random_uuid()` | `id: string` | QR unique UUID |
 | `entity_type` | `qr_entity_type` | NOT NULL | `entity_type: QRCodeEntityType` | Enum: `'member'`, `'servant'`, `'user'` |
 | `entity_id` | UUID | NOT NULL | `entity_id: string` | Target entity UUID |
 | `token` | TEXT | UNIQUE, NOT NULL | `token: string` | Token identifier string |
@@ -385,7 +385,7 @@ Append-only system security and administrative audit log.
 
 | Column | PostgreSQL Type | Constraints | Application Field | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| `id` | UUID | PRIMARY KEY, DEFAULT `uuid_generate_v4()` | `id: string` | Log unique UUID |
+| `id` | UUID | PRIMARY KEY, DEFAULT `gen_random_uuid()` | `id: string` | Log unique UUID |
 | `user_id` | UUID | NULL, FK → `profiles(id)` ON DELETE SET NULL | `user_id?: string` | Actor Profile UUID |
 | `user_name` | TEXT | NOT NULL | `user_name: string` | Actor display name |
 | `action` | TEXT | NOT NULL | `action: string` | Action code slug |

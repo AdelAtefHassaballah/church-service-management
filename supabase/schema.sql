@@ -66,7 +66,7 @@ END $$;
 
 -- 3. Churches Table
 CREATE TABLE IF NOT EXISTS public.churches (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     name_ar TEXT NOT NULL,
     location TEXT,
@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS public.churches (
 
 -- 4. Church Services / Ministries Table
 CREATE TABLE IF NOT EXISTS public.services (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     church_id UUID REFERENCES public.churches(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     name_ar TEXT NOT NULL,
@@ -110,7 +110,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     service_ids TEXT[] DEFAULT '{}'::text[],
     permissions TEXT[] DEFAULT '{}'::text[],
     status TEXT DEFAULT 'active' NOT NULL,
-    qr_code TEXT UNIQUE NOT NULL DEFAULT ('servant:' || uuid_generate_v4()),
+    qr_code TEXT UNIQUE NOT NULL DEFAULT ('servant:' || gen_random_uuid()),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS public.service_servants (
 
 -- 8. Members Table
 CREATE TABLE IF NOT EXISTS public.members (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     church_id UUID REFERENCES public.churches(id) ON DELETE CASCADE,
     service_ids TEXT[] DEFAULT '{}'::text[],
     group_id TEXT,
@@ -152,7 +152,7 @@ CREATE TABLE IF NOT EXISTS public.members (
     assigned_servant_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     status member_status NOT NULL DEFAULT 'active',
     notes TEXT,
-    qr_code TEXT UNIQUE NOT NULL DEFAULT ('member:' || uuid_generate_v4()),
+    qr_code TEXT UNIQUE NOT NULL DEFAULT ('member:' || gen_random_uuid()),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -166,7 +166,7 @@ CREATE TABLE IF NOT EXISTS public.service_members (
 
 -- 10. Servant to Member Care Assignments (Per Service)
 CREATE TABLE IF NOT EXISTS public.member_servant_assignments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     service_id UUID REFERENCES public.services(id) ON DELETE CASCADE,
     servant_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
     member_id UUID REFERENCES public.members(id) ON DELETE CASCADE,
@@ -176,7 +176,7 @@ CREATE TABLE IF NOT EXISTS public.member_servant_assignments (
 
 -- 11. Universal QR Codes Table (Opaque Tokens only, No PII)
 CREATE TABLE IF NOT EXISTS public.qr_codes (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     entity_type qr_entity_type NOT NULL,
     entity_id UUID NOT NULL,
     token TEXT UNIQUE NOT NULL,
@@ -188,7 +188,7 @@ CREATE TABLE IF NOT EXISTS public.qr_codes (
 
 -- 12. Member Attendance Records Table
 CREATE TABLE IF NOT EXISTS public.attendance_records (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     church_id UUID REFERENCES public.churches(id) ON DELETE CASCADE,
     service_id UUID REFERENCES public.services(id) ON DELETE CASCADE NOT NULL,
     group_id TEXT,
@@ -205,7 +205,7 @@ CREATE TABLE IF NOT EXISTS public.attendance_records (
 
 -- 13. Servant Attendance & Check-in Table
 CREATE TABLE IF NOT EXISTS public.servant_attendance (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     church_id UUID REFERENCES public.churches(id) ON DELETE CASCADE,
     service_id UUID REFERENCES public.services(id) ON DELETE CASCADE,
     servant_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -221,7 +221,7 @@ CREATE TABLE IF NOT EXISTS public.servant_attendance (
 
 -- 14. Member Notes & Care History
 CREATE TABLE IF NOT EXISTS public.member_notes (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     member_id UUID REFERENCES public.members(id) ON DELETE CASCADE,
     author_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
@@ -232,7 +232,7 @@ CREATE TABLE IF NOT EXISTS public.member_notes (
 
 -- 15. Tasks Management
 CREATE TABLE IF NOT EXISTS public.tasks (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     church_id UUID REFERENCES public.churches(id) ON DELETE CASCADE,
     service_id UUID REFERENCES public.services(id) ON DELETE SET NULL,
     group_id TEXT,
@@ -254,7 +254,7 @@ CREATE TABLE IF NOT EXISTS public.tasks (
 
 -- 16. Weekly Lesson Preparation Hub
 CREATE TABLE IF NOT EXISTS public.weekly_lessons (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     church_id UUID REFERENCES public.churches(id) ON DELETE CASCADE,
     service_id UUID REFERENCES public.services(id) ON DELETE SET NULL,
     group_id TEXT,
@@ -273,7 +273,7 @@ CREATE TABLE IF NOT EXISTS public.weekly_lessons (
 
 -- 17. Calendar Events
 CREATE TABLE IF NOT EXISTS public.calendar_events (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     church_id UUID REFERENCES public.churches(id) ON DELETE CASCADE,
     service_id UUID REFERENCES public.services(id) ON DELETE SET NULL,
     group_id TEXT,
@@ -297,7 +297,7 @@ CREATE TABLE IF NOT EXISTS public.calendar_events (
 
 -- 18. Audit Logs (Append-Only)
 CREATE TABLE IF NOT EXISTS public.audit_logs (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     user_name TEXT NOT NULL,
     action TEXT NOT NULL,
@@ -723,10 +723,10 @@ CREATE OR REPLACE FUNCTION public.admin_create_user(
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, auth
+SET search_path = public, auth, extensions
 AS $$
 DECLARE
-    new_user_id UUID := uuid_generate_v4();
+    new_user_id UUID := gen_random_uuid();
     default_pass TEXT := 'Servant' || floor(random() * 900000 + 100000)::text || '!';
     encrypted_pass TEXT;
     created_profile RECORD;
@@ -782,7 +782,30 @@ BEGIN
         'authenticated'
     );
 
-    -- 5. Upsert public.profiles row
+    -- 5. Create auth.identities link for email auth
+    INSERT INTO auth.identities (
+        id,
+        user_id,
+        provider_id,
+        identity_data,
+        provider,
+        last_sign_in_at,
+        created_at,
+        updated_at
+    )
+    VALUES (
+        gen_random_uuid(),
+        new_user_id,
+        new_user_id::text,
+        jsonb_build_object('sub', new_user_id::text, 'email', LOWER(TRIM(p_email))),
+        'email',
+        NOW(),
+        NOW(),
+        NOW()
+    )
+    ON CONFLICT (provider, provider_id) DO NOTHING;
+
+    -- 6. Upsert public.profiles row
     INSERT INTO public.profiles (
         id,
         email,
@@ -827,13 +850,20 @@ BEGIN
         name = EXCLUDED.name,
         name_ar = EXCLUDED.name_ar,
         role = EXCLUDED.role,
+        avatar_url = EXCLUDED.avatar_url,
+        phone = EXCLUDED.phone,
+        whatsapp = EXCLUDED.whatsapp,
+        address = EXCLUDED.address,
+        bio = EXCLUDED.bio,
+        gender = EXCLUDED.gender,
+        date_of_birth = EXCLUDED.date_of_birth,
         service_ids = EXCLUDED.service_ids,
         permissions = EXCLUDED.permissions,
         status = EXCLUDED.status,
         updated_at = NOW()
     RETURNING * INTO created_profile;
 
-    -- 6. Create QR code record
+    -- 7. Create QR code record
     INSERT INTO public.qr_codes (
         entity_type,
         entity_id,
@@ -850,9 +880,11 @@ BEGIN
         p_service_ids,
         NOW()
     )
-    ON CONFLICT (token) DO NOTHING;
+    ON CONFLICT (token) DO UPDATE SET
+        service_ids = EXCLUDED.service_ids,
+        status = EXCLUDED.status;
 
-    -- 7. Populate service_servants relation table if service UUIDs provided
+    -- 8. Populate service_servants relation table if service UUIDs provided
     IF p_service_ids IS NOT NULL THEN
         FOREACH srv_id_text IN ARRAY p_service_ids LOOP
             BEGIN
@@ -867,7 +899,7 @@ BEGIN
         END LOOP;
     END IF;
 
-    -- 8. Log audit trail
+    -- 9. Log audit trail
     INSERT INTO public.audit_logs (user_id, user_name, action, entity_type, entity_id, details)
     VALUES (
         auth.uid(),

@@ -30,7 +30,7 @@ export const ServantAttendancePage: React.FC = () => {
   const services = serviceService.getAll();
   const allUsers = userService.getAll();
 
-  const [selectedServiceId, setSelectedServiceId] = useState<string>(services[0]?.id || 'srv-prep');
+  const [selectedServiceId, setSelectedServiceId] = useState<string>(services[0]?.id || '');
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [servants, setServants] = useState<UserProfile[]>([]);
   const [attendanceMap, setAttendanceMap] = useState<Record<string, { status: AttendanceStatus; checkInTime?: string }>>({});
